@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hotel Soluna</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/estilos.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">
+      <img src="/favicon.svg" alt="" width="28" height="28">
+      <span>Hotel Soluna</span>
+      <small>Playa Sámara</small>
+    </div>
+    <div class="sesion">
+      <span id="usuario-actual"></span>
+      <button id="btn-entrar" class="boton claro" type="button">Iniciar sesión</button>
+      <button id="btn-salir" class="boton claro" type="button" hidden>Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="aviso" class="aviso" role="status" hidden></div>
+
+    <section id="sec-buscar" class="tarjeta">
+      <h1>Disponibilidad</h1>
+      <form id="form-buscar" class="fila">
+        <label>Entrada <input type="date" name="entrada" required></label>
+        <label>Salida <input type="date" name="salida" required></label>
+        <label>Personas <input type="number" name="personas" min="1" max="10" value="2" required></label>
+        <button class="boton" type="submit">Buscar</button>
+      </form>
+      <div id="resultados"></div>
+    </section>
+
+    <section id="sec-reservas" class="tarjeta" hidden>
+      <div class="encabezado">
+        <h2 id="titulo-reservas">Reservas</h2>
+        <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
+      </div>
+      <div id="lista-reservas"></div>
+    </section>
+
+    <section id="sec-habitaciones" class="tarjeta" hidden>
+      <div class="encabezado">
+        <h2>Habitaciones</h2>
+        <button id="btn-recargar-habitaciones" class="boton claro" type="button">Actualizar</button>
+      </div>
+      <div id="lista-habitaciones"></div>
+    </section>
+
+    <section id="sec-usuarios" class="tarjeta" hidden>
+      <h2>Cuentas del personal</h2>
+      <form id="form-usuario" class="fila">
+        <label>Nombre <input name="nombre" required minlength="2"></label>
+        <label>Correo <input name="correo" type="email" required></label>
+        <label>Contraseña <input name="contrasena" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label>Rol
+          <select name="rol">
+            <option value="recepcionista">Recepcionista</option>
+            <option value="limpieza">Limpieza</option>
+            <option value="mantenimiento">Mantenimiento</option>
+            <option value="gerente">Gerente</option>
+          </select>
+        </label>
+        <button class="boton" type="submit">Crear cuenta</button>
+      </form>
+      <div id="lista-usuarios"></div>
+    </section>
+
+    <section id="sec-bitacora" class="tarjeta" hidden>
+      <div class="encabezado">
+        <h2>Bitácora de auditoría</h2>
+        <button id="btn-recargar-bitacora" class="boton claro" type="button">Actualizar</button>
+      </div>
+      <div id="lista-bitacora"></div>
+    </section>
+  </main>
+
+  <dialog id="dlg-entrar">
+    <form id="form-entrar" method="dialog">
+      <h2 id="titulo-entrar">Iniciar sesión</h2>
+      <p id="nota-entrar" class="nota" hidden></p>
+      <label id="campo-nombre" hidden>Nombre completo <input name="nombre" minlength="2"></label>
+      <label>Correo <input name="correo" type="email" required autocomplete="username"></label>
+      <label>Contraseña <input name="contrasena" type="password" required autocomplete="current-password"></label>
+      <div class="acciones">
+        <button id="btn-cambiar-modo" class="enlace" type="button">Crear una cuenta de cliente</button>
+        <button class="boton claro" type="button" data-cerrar>Cancelar</button>
+        <button id="btn-enviar-entrar" class="boton" type="submit" value="enviar">Entrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-huesped">
+    <form id="form-huesped" method="dialog">
+      <h2>Datos del huésped</h2>
+      <p id="resumen-huesped" class="nota"></p>
+      <label>Nombre completo <input name="nombre_huesped" required minlength="2"></label>
+      <label>Correo <input name="correo_huesped" type="email" required></label>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cancelar</button>
+        <button class="boton" type="submit" value="enviar">Confirmar reserva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <footer class="pie">
+    Prototipo académico (ULACIT) · Respondió la réplica <code id="replica">…</code>
+  </footer>
+</body>
+</html>

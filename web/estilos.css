@@ -1,0 +1,142 @@
+/* Hotel Soluna: estilos de la interfaz del prototipo */
+:root {
+  --oceano: #0B3C5D;
+  --laguna: #1D7874;
+  --arena: #F6F1E7;
+  --sol: #F2A65A;
+  --coral: #C8553D;
+  --texto: #1F2933;
+  --gris: #5F6B76;
+  --borde: #DAD3C5;
+  --blanco: #FFFFFF;
+  --radio: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--texto);
+  background: var(--arena);
+  line-height: 1.45;
+}
+
+[hidden] { display: none !important; }
+
+/* Barra superior */
+.barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  background: var(--oceano);
+  color: var(--blanco);
+}
+.marca { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; font-weight: 700; }
+.marca small { font-weight: 400; font-size: .85rem; opacity: .8; }
+.sesion { display: flex; align-items: center; gap: 10px; font-size: .95rem; }
+
+main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+
+/* Tarjetas */
+.tarjeta {
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+h1, h2 { margin: 0 0 14px; color: var(--oceano); }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; }
+.encabezado { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Formularios */
+.fila { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 16px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--gris); }
+input, select {
+  font: inherit;
+  color: var(--texto);
+  padding: 8px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: var(--blanco);
+  min-width: 140px;
+}
+input:focus, select:focus { outline: 2px solid var(--laguna); outline-offset: 1px; }
+
+/* Botones */
+.boton {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  background: var(--laguna);
+  color: var(--blanco);
+}
+.boton:hover { filter: brightness(1.08); }
+.boton.claro { background: transparent; color: inherit; border: 1px solid currentColor; }
+.boton.peligro { background: var(--coral); }
+.boton.pequeno { padding: 5px 10px; font-size: .85rem; }
+.boton:disabled { opacity: .5; cursor: wait; }
+.enlace { background: none; border: none; color: var(--laguna); cursor: pointer; font: inherit; text-decoration: underline; padding: 0; margin-right: auto; }
+
+/* Resultados de disponibilidad */
+.opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.opcion {
+  border: 1px solid var(--borde);
+  border-left: 5px solid var(--sol);
+  border-radius: var(--radio);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.opcion h3 { margin: 0; text-transform: capitalize; color: var(--oceano); }
+.opcion .precio { font-size: 1.3rem; font-weight: 700; }
+.opcion .detalle { color: var(--gris); font-size: .9rem; }
+
+/* Tablas */
+.tabla-contenedor { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borde); vertical-align: middle; }
+th { color: var(--gris); font-weight: 600; background: #FBF8F2; }
+td code { font-size: .85rem; }
+
+.estado { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .8rem; font-weight: 600; background: #E8EEF2; }
+.estado.confirmada, .estado.limpia, .estado.inspeccionada { background: #DDF0EC; color: #145C58; }
+.estado.pendiente_pago, .estado.en_limpieza { background: #FCEBD7; color: #8A4B12; }
+.estado.cancelada, .estado.sucia { background: #F6DCD6; color: #8E3524; }
+
+.vacio { color: var(--gris); font-style: italic; }
+.nota { color: var(--gris); font-size: .9rem; margin: 0 0 12px; }
+
+/* Avisos */
+.aviso { border-radius: var(--radio); padding: 12px 16px; margin-bottom: 16px; font-weight: 500; }
+.aviso.exito { background: #DDF0EC; color: #145C58; }
+.aviso.error { background: #F6DCD6; color: #8E3524; }
+
+/* Diálogos */
+dialog { border: none; border-radius: var(--radio); padding: 24px; width: min(420px, 92vw); }
+dialog::backdrop { background: rgba(11, 60, 93, .45); }
+dialog form { display: flex; flex-direction: column; gap: 12px; }
+dialog input { width: 100%; }
+.acciones { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px; }
+
+.pie { text-align: center; color: var(--gris); font-size: .85rem; padding: 16px; }
+
+@media (max-width: 600px) {
+  .barra { padding: 12px 16px; }
+  .tarjeta { padding: 16px; }
+  input, select { min-width: 0; width: 100%; }
+  .fila label { flex: 1 1 140px; }
+}
+
+/* La lista de 46 habitaciones se desplaza dentro de su tarjeta */
+#lista-habitaciones .tabla-contenedor { max-height: 440px; overflow-y: auto; }
+#lista-habitaciones th { position: sticky; top: 0; }
