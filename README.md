@@ -28,7 +28,8 @@ nodo local de contingencia en el hotel.
 | Contraseñas | Argon2id |
 | Sesiones | JWT de 30 minutos |
 | Contenedores | Docker y Docker Compose |
-| Proxy y balanceo | Nginx *(bloque 2)* |
+| Proxy, HTTPS y balanceo | Nginx 1.30 |
+| Interfaz web | HTML, CSS y JavaScript sin librerías |
 | Correo de prueba | Mailpit *(bloque 3)* |
 | Prueba de carga | Locust *(bloque 4)* |
 | Red del hotel | Cisco Packet Tracer *(bloque 5)* |
@@ -47,8 +48,8 @@ Navegador ──► Nginx (HTTPS, balanceo) ──► API x3 (FastAPI) ──►
 Redes de Docker:
 
 - `datos` es interna, sin salida a Internet ni acceso desde el equipo. Ahí están la API y PostgreSQL.
-- `backend` conecta la API con los servicios externos simulados.
-- La base de datos no publica ningún puerto.
+- `backend` conecta Nginx con la API y, desde el bloque 3, con los servicios externos simulados.
+- Solo Nginx publica puertos (80 y 443). Ni la API ni la base de datos son accesibles directamente.
 
 ## Requisitos
 
@@ -75,7 +76,17 @@ docker compose up --build -d
 docker compose exec api python -m app.seed
 ```
 
-Luego abrir la documentación interactiva de la API: <http://localhost:8000/api/docs>
+Luego abrir:
+
+- Interfaz web: <https://localhost>
+- Documentación interactiva de la API: <https://localhost/api/docs>
+
+El certificado es autofirmado, así que el navegador mostrará una advertencia la primera vez:
+
+- **Chrome:** "Configuración avanzada" > "Acceder a localhost".
+- **Safari:** "Mostrar detalles" > "visitar este sitio web".
+
+En producción se usaría un certificado emitido por una autoridad.
 
 ### Cuentas de demostración
 
@@ -89,13 +100,51 @@ Todas usan la contraseña definida en `DEMO_PASSWORD` dentro de `.env`.
 | mantenimiento@soluna.test | mantenimiento |
 | cliente@soluna.test | cliente |
 
-En `/api/docs`, use el botón **Authorize**: el campo *username* es el correo.
+En la interfaz web, use **Iniciar sesión**. En `/api/docs`, use el botón **Authorize**; el campo *username* es el correo.
+
+### Qué ve cada rol en la interfaz
+
+| Rol | Secciones |
+|---|---|
+| Público | Disponibilidad (para reservar debe iniciar sesión o crear una cuenta) |
+| Cliente | Disponibilidad, Mis reservas |
+| Recepcionista | Disponibilidad, Reservas, Habitaciones (puede reservar a nombre de un huésped) |
+| Limpieza | Habitaciones (cambia el estado de limpieza) |
+| Mantenimiento | Habitaciones (solo lectura) |
+| Gerente | Todo lo anterior, más Cuentas del personal y Bitácora |
+
+El pie de página muestra qué réplica de la API respondió la última solicitud.
+
+## Demostraciones del bloque 2
+
+```bash
+# 1. Balanceo: cada solicitud la atiende una réplica distinta
+for i in 1 2 3 4 5 6; do curl -sk https://localhost/api/salud; echo; done
+
+# 2. Falla de una réplica: se detiene una y el servicio sigue respondiendo
+docker compose ps api                    # ver los nombres de las réplicas
+docker stop hotel-soluna-api-2
+for i in 1 2 3 4 5 6; do curl -sk https://localhost/api/salud; echo; done
+docker start hotel-soluna-api-2
+
+# 3. Escalar a 5 réplicas sin reiniciar Nginx
+docker compose up -d --scale api=5
+for i in $(seq 1 10); do curl -sk https://localhost/api/salud; echo; done
+docker compose up -d --scale api=3       # volver a 3
+
+# 4. Límite de intentos: después de 6 intentos seguidos, Nginx responde 429
+for i in $(seq 1 8); do curl -sk -o /dev/null -w "%{http_code} " -X POST https://localhost/api/auth/login -d "username=x@soluna.test&password=incorrecta"; done; echo
+
+# 5. HTTP redirige a HTTPS
+curl -sI http://localhost | head -3
+```
 
 ### Comandos útiles
 
 ```bash
 docker compose ps                 # estado y salud de los contenedores
-docker compose logs -f api        # registros de la API
+docker compose logs -f api        # registros de las tres réplicas
+docker compose logs -f nginx      # registros de Nginx
 docker compose down               # detener (los datos se conservan)
 docker compose down -v            # detener y BORRAR la base (vuelve a crearse al levantar)
 ```
@@ -119,6 +168,8 @@ Si cambian el esquema, hay que usar `docker compose down -v` y volver a levantar
 | GET | `/api/bitacora` | Gerente |
 | GET | `/api/salud` | Público (healthcheck; indica qué réplica respondió) |
 
+Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
+
 ### Medidas de seguridad ya implementadas
 
 - **Contraseñas:** se guardan con Argon2id y nunca en texto plano.
@@ -139,6 +190,13 @@ Si cambian el esquema, hay que usar `docker compose down -v` y volver a levantar
 - **Contenedores:**
   - La API corre con un usuario sin privilegios.
   - La base de datos no publica puertos.
+- **Nginx:**
+  - Todo el tráfico entra por HTTPS (TLS 1.2 o 1.3), y HTTP redirige a HTTPS.
+  - Limita el inicio de sesión a 10 intentos por minuto por dirección IP, con 5 de margen.
+  - Agrega cabeceras de seguridad. En la interfaz incluye una política de contenido (CSP) que solo permite código del propio sitio.
+  - Si una réplica falla, reintenta en otra.
+  - No revela su versión.
+- **Interfaz web:** no usa librerías externas e inserta los datos como texto, nunca como HTML, para evitar inyección de código.
 
 ## Pruebas
 
@@ -157,7 +215,7 @@ Si cambian el esquema, hay que usar `docker compose down -v` y volver a levantar
 ## Estado
 
 - [x] **Bloque 1:** base de datos, API con roles, Compose mínimo.
-- [ ] **Bloque 2:** Nginx con HTTPS, tres réplicas, límite de intentos, interfaz web.
+- [x] **Bloque 2:** Nginx con HTTPS, tres réplicas, límite de intentos, interfaz web.
 - [ ] **Bloque 3:** simulador de pasarela, OTA y factura, más Mailpit.
 - [ ] **Bloque 4:** respaldos automáticos, restauración en el nodo de contingencia, Locust.
 - [ ] **Bloque 5:** red en Packet Tracer (configuraciones y guía).
@@ -170,6 +228,8 @@ hotel-soluna/
 ├── docker-compose.yml
 ├── .env.example          plantilla de secretos (el .env real no se sube)
 ├── db/init/              esquema, catálogo y usuarios de la base
+├── nginx/                imagen de Nginx: HTTPS, balanceo y cabeceras de seguridad
+├── web/                  interfaz web (HTML, CSS y JavaScript)
 └── api/
     ├── Dockerfile
     ├── requirements.txt
