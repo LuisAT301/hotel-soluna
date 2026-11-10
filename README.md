@@ -30,7 +30,8 @@ nodo local de contingencia en el hotel.
 | Contenedores | Docker y Docker Compose |
 | Proxy, HTTPS y balanceo | Nginx 1.30 |
 | Interfaz web | HTML, CSS y JavaScript sin librerías |
-| Correo de prueba | Mailpit *(bloque 3)* |
+| Servicios externos simulados | FastAPI: pasarela de pago, Hacienda y agencia de viajes en línea (OTA) |
+| Correo de prueba | Mailpit |
 | Prueba de carga | Locust *(bloque 4)* |
 | Red del hotel | Cisco Packet Tracer *(bloque 5)* |
 
@@ -48,8 +49,9 @@ Navegador ──► Nginx (HTTPS, balanceo) ──► API x3 (FastAPI) ──►
 Redes de Docker:
 
 - `datos` es interna, sin salida a Internet ni acceso desde el equipo. Ahí están la API y PostgreSQL.
-- `backend` conecta Nginx con la API y, desde el bloque 3, con los servicios externos simulados.
-- Solo Nginx publica puertos (80 y 443). Ni la API ni la base de datos son accesibles directamente.
+- `backend` conecta Nginx, la API, el simulador de servicios externos y Mailpit.
+- Hacia Internet solo Nginx publica puertos (80 y 443). Ni la API ni la base de datos son accesibles directamente.
+- El simulador (8090) y Mailpit (8025) publican sus paneles solo en el propio equipo (`127.0.0.1`), para la demostración.
 
 ## Requisitos
 
@@ -80,6 +82,13 @@ Luego abrir:
 
 - Interfaz web: <https://localhost>
 - Documentación interactiva de la API: <https://localhost/api/docs>
+- Correos enviados por el sistema (Mailpit): <http://localhost:8025>
+- Panel del simulador de servicios externos: <http://localhost:8090/docs>
+
+**Si ya tenían el proyecto del bloque 2 funcionando:**
+
+1. Agreguen a su `.env` las variables nuevas `SERVICIOS_LLAVE` y `OTA_SECRETO` (ver `.env.example`).
+2. Recreen la base, porque el bloque 3 agrega tablas: `docker compose down -v`, luego `docker compose up --build -d` y de nuevo el paso 3.
 
 El certificado es autofirmado, así que el navegador mostrará una advertencia la primera vez:
 
@@ -107,7 +116,7 @@ En la interfaz web, use **Iniciar sesión**. En `/api/docs`, use el botón **Aut
 | Rol | Secciones |
 |---|---|
 | Público | Disponibilidad (para reservar debe iniciar sesión o crear una cuenta) |
-| Cliente | Disponibilidad, Mis reservas |
+| Cliente | Disponibilidad, Mis reservas (paga en línea y consulta su factura) |
 | Recepcionista | Disponibilidad, Reservas, Habitaciones (puede reservar a nombre de un huésped) |
 | Limpieza | Habitaciones (cambia el estado de limpieza) |
 | Mantenimiento | Habitaciones (solo lectura) |
@@ -138,6 +147,73 @@ for i in $(seq 1 8); do curl -sk -o /dev/null -w "%{http_code} " -X POST https:/
 # 5. HTTP redirige a HTTPS
 curl -sI http://localhost | head -3
 ```
+
+## Demostraciones del bloque 3
+
+El bloque 3 conecta el hotel con tres proveedores externos, que en el prototipo
+simula el contenedor `simulador`:
+
+| Proveedor | Qué hace en el prototipo |
+|---|---|
+| Pasarela de pago | Recibe la tarjeta desde el navegador, cobra y reembolsa |
+| Hacienda | Recibe la factura electrónica y la acepta o la rechaza |
+| OTA (agencia de viajes en línea) | Envía reservas al hotel con un aviso firmado |
+
+Todos los correos que envía el sistema quedan en Mailpit (<http://localhost:8025>) y no llegan a nadie.
+
+### 1. Pago en línea y factura electrónica
+
+1. En <https://localhost>, inicie sesión como `cliente@soluna.test`, busque fechas y pulse **Reservar**.
+2. Se abre el formulario de pago con el hospedaje, el IVA (13 %) y el total.
+3. Pruebe primero la tarjeta rechazada y luego la aprobada:
+
+| Tarjeta de prueba | Resultado |
+|---|---|
+| 4242 4242 4242 4242 | Aprobada (Visa) |
+| 5555 5555 5555 4444 | Aprobada (Mastercard) |
+| 4000 0000 0000 0002 | Rechazada por fondos insuficientes |
+| 4000 0000 0000 0119 | La pasarela falla (la reserva sigue pendiente) |
+
+Cualquier vencimiento futuro (por ejemplo, `12/30`) y cualquier CVV de 3 dígitos.
+
+4. La reserva pasa a **Confirmada** y aparece el botón **Factura**, con la clave numérica de 50 dígitos.
+5. En Mailpit llega el correo de confirmación con los datos de la factura.
+6. Si se cancela la reserva, el pago se reembolsa y llega otro correo.
+
+### 2. Reservas desde una agencia de viajes en línea (OTA)
+
+```bash
+# Una reserva al azar (también se puede desde http://localhost:8090/docs)
+curl -s -X POST http://localhost:8090/ota/enviar
+
+# Una reserva con referencia fija; repetirla devuelve la misma reserva (200), no una nueva
+curl -s -X POST http://localhost:8090/ota/enviar -H "Content-Type: application/json" -d '{"referencia":"OTA-DEMO1","tipo":"suite"}'
+curl -s -X POST http://localhost:8090/ota/enviar -H "Content-Type: application/json" -d '{"referencia":"OTA-DEMO1","tipo":"suite"}'
+
+# Un aviso con firma falsa y uno repetido una hora después: el hotel responde 401
+curl -s -X POST http://localhost:8090/ota/enviar -H "Content-Type: application/json" -d '{"firma_invalida":true}'
+curl -s -X POST http://localhost:8090/ota/enviar -H "Content-Type: application/json" -d '{"fecha_vieja":true}'
+```
+
+La reserva aparece en la sección **Reservas** (recepción o gerencia) con el canal `ota`, y el huésped recibe el correo.
+
+### 3. Falla de la pasarela
+
+```bash
+docker compose stop simulador
+# Intente pagar en la interfaz: la reserva queda pendiente y el resto del sitio sigue funcionando
+docker compose start simulador
+```
+
+### 4. Lo que quedó registrado
+
+```bash
+docker compose exec db psql -U postgres -d hotel -c "SELECT tipo, estado, monto, marca, ultimos4 FROM pagos;"
+docker compose exec db psql -U postgres -d hotel -c "SELECT consecutivo, estado, total FROM facturas;"
+curl -s http://localhost:8090/panel      # lo que vio el simulador: cobros, facturas y avisos de la OTA
+```
+
+La tabla `pagos` solo guarda la marca y los últimos cuatro dígitos de la tarjeta.
 
 ### Comandos útiles
 
@@ -215,8 +291,12 @@ Detalles de seguridad:
 | GET/POST | `/api/usuarios` | Gerente |
 | GET | `/api/bitacora` | Gerente |
 | GET | `/api/salud` | Público (healthcheck; indica qué réplica respondió) |
+| POST | `/api/reservas/{codigo}/pago` | Dueño de la reserva, recepcionista, gerente *(bloque 3)* |
+| GET | `/api/reservas/{codigo}/factura` | Dueño de la reserva, recepcionista, gerente *(bloque 3)* |
+| POST | `/api/integraciones/ota/reservas` | Solo la OTA, con un aviso firmado *(bloque 3)* |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
+Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
 
 ### Medidas de seguridad ya implementadas
 
@@ -245,10 +325,23 @@ Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
   - Si una réplica falla, reintenta en otra.
   - No revela su versión.
 - **Interfaz web:** no usa librerías externas e inserta los datos como texto, nunca como HTML, para evitar inyección de código.
+- **Pagos (bloque 3):**
+  - El navegador envía la tarjeta directamente a la pasarela y recibe un token de un solo uso. La API solo recibe ese token, así que el número de tarjeta y el CVV nunca llegan al hotel.
+  - La base guarda únicamente la marca y los últimos cuatro dígitos.
+  - La API se identifica ante la pasarela y Hacienda con una llave de comercio (secreto de Docker).
+  - Cada cobro lleva una llave de idempotencia: si la conexión se corta y la API reintenta, no se cobra dos veces.
+  - La reserva se bloquea durante el pago, así que dos pagos simultáneos no pueden confirmarla dos veces.
+  - Si la pasarela no responde, la reserva sigue pendiente; una reserva pagada solo se cancela si el reembolso se completa.
+  - Nginx limita la ruta de tarjetas a 10 intentos por minuto por IP, para frenar la prueba de tarjetas robadas.
+  - La API no puede modificar ni borrar pagos, ni cambiar los montos de una factura.
+- **OTA (bloque 3):**
+  - Cada aviso viaja firmado con HMAC-SHA256 y un secreto compartido. Se rechaza si la firma no coincide, si el cuerpo fue alterado o si tiene más de 5 minutos.
+  - La referencia de la OTA es única: un aviso repetido no duplica la reserva.
+- **Correo:** se envía después de responder al usuario; si el servidor de correo falla, la reserva o el pago no se pierden.
 
 ## Pruebas
 
-`api/tests` contiene 26 pruebas automáticas. Cubren:
+`api/tests` contiene 43 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -257,14 +350,28 @@ Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 - Sobreventa, incluidas 10 solicitudes simultáneas contra 2 procesos de la API.
 - Bitácora.
 - Privilegios de la base de datos.
+- Bloque 3, contra el simulador real:
+  - Pago aprobado, rechazado y con la pasarela caída.
+  - Doble pago y token reutilizado.
+  - Factura aceptada por Hacienda, con clave de 50 dígitos e IVA del 13 %.
+  - Reembolso al cancelar una reserva pagada.
+  - Avisos de la OTA: firma válida, firma falsa, cuerpo alterado, aviso viejo, aviso repetido y sin disponibilidad.
+  - Correos de confirmación y cancelación.
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
+
+## Límites conocidos del prototipo
+
+- Al cancelar una reserva pagada se reembolsa el dinero, pero todavía no se emite la nota de crédito electrónica que anula la factura.
+- Una reserva en línea que nunca se paga mantiene ocupada la habitación hasta que alguien la cancela; falta un vencimiento automático.
+- El simulador guarda todo en memoria: al reiniciarlo se pierden sus registros (no los del hotel).
+- Los avisos de la OTA llegan a la API por la red interna de Docker. En producción entrarían por Internet a través de Nginx y HTTPS.
 
 ## Estado
 
 - [x] **Bloque 1:** base de datos, API con roles, Compose mínimo.
 - [x] **Bloque 2:** Nginx con HTTPS, tres réplicas, límite de intentos, interfaz web.
-- [ ] **Bloque 3:** simulador de pasarela, OTA y factura, más Mailpit.
+- [x] **Bloque 3:** simulador de pasarela, OTA y factura, más Mailpit.
 - [ ] **Bloque 4:** respaldos automáticos, restauración en el nodo de contingencia, Locust.
 - [ ] **Bloque 5:** red en Packet Tracer (configuraciones y guía).
 - [ ] **Bloque 6:** diagramas.
@@ -278,6 +385,7 @@ hotel-soluna/
 ├── db/init/              esquema, catálogo y usuarios de la base
 ├── nginx/                imagen de Nginx: HTTPS, balanceo y cabeceras de seguridad
 ├── web/                  interfaz web (HTML, CSS y JavaScript)
+├── simulador/            pasarela de pago, Hacienda y OTA simuladas
 └── api/
     ├── Dockerfile
     ├── requirements.txt
