@@ -152,6 +152,54 @@ docker compose down -v            # detener y BORRAR la base (vuelve a crearse a
 Los scripts de `db/init` solo se ejecutan cuando el volumen de datos está vacío.
 Si cambian el esquema, hay que usar `docker compose down -v` y volver a levantar.
 
+## Ver la base de datos
+
+La base no publica ningún puerto, por seguridad. Hay dos formas de consultarla.
+
+### Desde la terminal
+
+```bash
+docker compose exec db psql -U postgres -d hotel
+```
+
+Dentro, por ejemplo:
+
+```sql
+\dt
+SELECT codigo, nombre_huesped, fecha_entrada, estado FROM reservas;
+SELECT fecha, accion, entidad_id FROM bitacora ORDER BY id DESC LIMIT 10;
+\q
+```
+
+`\dt` lista las tablas y `\q` sale.
+
+### Con Adminer (visor web, solo para desarrollo)
+
+```bash
+docker compose up -d adminer        # encender
+grep DB_RESPALDO_PASSWORD .env      # ver la contraseña de solo lectura
+docker compose stop adminer         # apagar
+```
+
+Abra <http://localhost:8081> e ingrese:
+
+| Campo | Valor |
+|---|---|
+| Sistema | PostgreSQL |
+| Servidor | `db` |
+| Usuario | `respaldo` |
+| Contraseña | el valor de `DB_RESPALDO_PASSWORD` en `.env` |
+| Base de datos | `hotel` |
+
+El usuario `respaldo` solo puede leer, así que no hay riesgo de borrar algo por accidente.
+Para modificar datos, use el usuario `postgres` con `POSTGRES_PASSWORD`, con cuidado.
+
+Detalles de seguridad:
+
+- Adminer no arranca con `docker compose up -d`; solo se enciende cuando se pide.
+- Solo escucha en el propio equipo (`127.0.0.1`).
+- En producción no existiría.
+
 ## API (bloque 1)
 
 | Método | Ruta | Quién puede usarla |

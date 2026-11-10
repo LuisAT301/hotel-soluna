@@ -80,6 +80,25 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Visor web de la base de datos, SOLO para desarrollo.
+  # No arranca con "docker compose up -d": se enciende a pedido con
+  #   docker compose up -d adminer      y se abre en http://localhost:8081
+  # Solo escucha en el propio equipo (127.0.0.1), nunca en la red.
+  adminer:
+    image: adminer:6
+    profiles: ["herramientas"]
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - datos
+      - herramientas
+    ports:
+      - "127.0.0.1:8081:8080"
+    restart: "no"
+
 networks:
   # Red interna: sin salida a Internet ni acceso desde el equipo anfitrión.
   # Solo la API y PostgreSQL están en ella.
@@ -87,6 +106,8 @@ networks:
     internal: true
   # Red entre Nginx y la API (en el bloque 3 se suman el simulador y Mailpit)
   backend: {}
+  # Red para publicar herramientas de desarrollo (Adminer) en el propio equipo
+  herramientas: {}
 
 volumes:
   db_datos: {}
