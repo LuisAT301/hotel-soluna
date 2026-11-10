@@ -360,6 +360,47 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 
+## Solución de problemas
+
+### Algunos contenedores no encienden (quedan en "Created")
+
+Si `docker compose up` solo enciende `db` y `mailpit`, y la API, el simulador y Nginx quedan en estado `Created`,
+casi siempre falta un secreto en `.env`. Docker lo indica al final de la salida, por ejemplo:
+
+```
+environment variable "SERVICIOS_LLAVE" required by secret "hotel-soluna_servicios_llave" is not set
+```
+
+Solución: compare su `.env` con `.env.example`, agregue las variables que falten (desde el bloque 3, `SERVICIOS_LLAVE` y `OTA_SECRETO`) y vuelva a ejecutar `docker compose up --build -d`.
+
+### Todo enciende, pero reservar o pagar da error
+
+La base se creó con una versión anterior y no tiene las tablas nuevas. Lo confirma la salud de la API:
+
+```bash
+curl -sk https://localhost/api/salud
+```
+
+Si `base_de_datos` dice `desactualizada`, recree la base (borra los datos de prueba):
+
+```bash
+docker compose down -v
+docker compose up --build -d
+docker compose exec api python -m app.seed
+```
+
+### Otro programa usa un puerto
+
+Si Docker dice `port is already allocated`, otro programa usa el puerto 80, 443, 8025 o 8090. Ciérrelo, o vea cuál es con
+`docker ps` (otro proyecto de Docker) o, en Mac, `lsof -i :8025`.
+
+### Ver por qué falla un contenedor
+
+```bash
+docker compose ps -a                 # estado de todos, incluidos los detenidos
+docker compose logs simulador        # cambie "simulador" por el servicio que falla
+```
+
 ## Límites conocidos del prototipo
 
 - Al cancelar una reserva pagada se reembolsa el dinero, pero todavía no se emite la nota de crédito electrónica que anula la factura.
