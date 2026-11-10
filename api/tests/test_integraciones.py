@@ -148,7 +148,7 @@ def test_cancelar_reserva_pagada_reembolsa(cliente_http, simulador, admin_db, co
 
 def test_api_no_puede_alterar_pagos_ni_montos_de_factura(admin_db):
     import psycopg
-    conexion = psycopg.connect(host=os.environ["DB_HOST"], port=os.environ["DB_PORT"], dbname="hotel",
+    conexion = psycopg.connect(host=os.environ["DB_HOST"], port=os.environ["DB_PORT"], dbname=os.environ.get("DB_NAME", "hotel"),
                                user="app_hotel", password=os.environ["DB_PASSWORD"], autocommit=True)
     with conexion:
         for sql in ("UPDATE pagos SET monto = 0", "DELETE FROM pagos",

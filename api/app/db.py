@@ -13,12 +13,14 @@ url = URL.create(
     host=config.DB_HOST,
     port=config.DB_PORT,
     database=config.DB_NAME,
+    query={"sslmode": config.DB_SSLMODE},
 )
 
 # Cada réplica de la API mantiene un grupo pequeño de conexiones.
-# Con 3 réplicas: 3 x (5 + 5) = 30 conexiones como máximo, por debajo
-# del límite de 100 que PostgreSQL trae por defecto.
-engine = create_engine(url, pool_size=5, max_overflow=5, pool_pre_ping=True)
+# En Docker: 3 x (5 + 5) = 30 como máximo, por debajo del límite de 100 de
+# PostgreSQL. En Supabase (plan gratuito) se baja a 3 x (2 + 2) = 12.
+engine = create_engine(url, pool_size=config.DB_POOL, max_overflow=config.DB_POOL_EXTRA,
+                       pool_pre_ping=True)
 SesionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 

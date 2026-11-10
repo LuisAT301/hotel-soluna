@@ -24,7 +24,8 @@ def salud(respuesta: Response, sesion: Session = Depends(obtener_sesion)):
         base = "ok"
         # Una base creada antes del bloque 3 no tiene la tabla de pagos: la API
         # enciende, pero las reservas fallan. Se avisa en vez de fallar en silencio.
-        if sesion.execute(text("SELECT to_regclass('public.pagos')")).scalar() is None:
+        # Sin esquema explícito: sirve con "public" (Docker) y con "hotel" (Supabase)
+        if sesion.execute(text("SELECT to_regclass('pagos')")).scalar() is None:
             base = "desactualizada: ejecute docker compose down -v y vuelva a levantar"
             if not _aviso_esquema_dado:
                 registro.error("La base de datos no tiene las tablas del bloque 3. "

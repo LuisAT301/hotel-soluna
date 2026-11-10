@@ -30,6 +30,12 @@ DB_PORT = int(leer("DB_PORT", "5432"))
 DB_NAME = leer("DB_NAME", "hotel")
 DB_USER = leer("DB_USER", "app_hotel")
 DB_PASSWORD = obligatorio("DB_PASSWORD")
+# Cifrado de la conexión. En la base local de Docker basta "prefer"; con una
+# base en la nube (Supabase) se usa "require" para no aceptar conexiones sin TLS.
+DB_SSLMODE = leer("DB_SSLMODE", "prefer")
+# Conexiones por réplica de la API (fijas + extra en momentos de carga)
+DB_POOL = int(leer("DB_POOL", "5"))
+DB_POOL_EXTRA = int(leer("DB_POOL_EXTRA", "5"))
 
 JWT_SECRET = obligatorio("JWT_SECRET")
 JWT_ALGORITMO = "HS256"
