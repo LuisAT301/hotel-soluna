@@ -97,8 +97,50 @@ class ReservaSalida(BaseModel):
     fecha_salida: date
     canal: str
     estado: str
-    total: Decimal
+    total: Decimal                 # hospedaje, sin impuestos
+    impuesto: Decimal              # IVA del 13 %
+    total_con_impuesto: Decimal    # lo que se cobra
+    tiene_factura: bool
     creada_en: datetime
+
+
+class SolicitudPago(BaseModel):
+    # Token de un solo uso que entrega la pasarela al navegador. La API
+    # nunca recibe el número de tarjeta ni el código de seguridad.
+    token: str = Field(pattern=r"^tok_[A-Za-z0-9_-]{8,64}$")
+
+
+class FacturaSalida(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    clave: str
+    consecutivo: str
+    subtotal: Decimal
+    impuesto: Decimal
+    total: Decimal
+    estado: str
+    mensaje: str | None
+    emitida_en: datetime
+
+
+class PagoSalida(BaseModel):
+    reserva: ReservaSalida
+    transaccion: str
+    marca: str | None
+    ultimos4: str | None
+    monto: Decimal
+    factura: FacturaSalida
+
+
+class ReservaOTA(BaseModel):
+    """Aviso que envía la agencia de viajes en línea (OTA)."""
+    referencia: str = Field(pattern=r"^[A-Z0-9-]{4,40}$")
+    tipo: Literal["estándar", "superior", "suite"]
+    fecha_entrada: date
+    fecha_salida: date
+    personas: int = Field(ge=1, le=10)
+    nombre_huesped: str = Field(min_length=2, max_length=120)
+    correo_huesped: EmailStr
 
 
 class BitacoraSalida(BaseModel):

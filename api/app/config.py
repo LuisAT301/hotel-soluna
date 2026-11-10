@@ -6,6 +6,7 @@ Cada valor sensible puede llegar de dos formas:
 Así ninguna contraseña queda escrita en el código ni en el repositorio.
 """
 import os
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -39,3 +40,24 @@ MAX_INTENTOS = int(leer("MAX_INTENTOS", "5"))
 MINUTOS_BLOQUEO = int(leer("MINUTOS_BLOQUEO", "15"))
 
 ZONA_HORARIA = ZoneInfo("America/Costa_Rica")
+
+# ---------------------------------------------------------------------
+# Servicios externos (bloque 3)
+# ---------------------------------------------------------------------
+# Simulador de la pasarela de pago y de Hacienda
+SIMULADOR_URL = leer("SIMULADOR_URL", "http://simulador:8000")
+SERVICIOS_LLAVE = obligatorio("SERVICIOS_LLAVE")   # llave de comercio ante la pasarela y Hacienda
+
+# Secreto compartido con la OTA para verificar la firma de sus avisos
+OTA_SECRETO = obligatorio("OTA_SECRETO")
+OTA_TOLERANCIA_SEGUNDOS = 300   # avisos con más de 5 minutos se rechazan (repeticiones)
+
+# Correo saliente. En el prototipo lo captura Mailpit y nunca llega a nadie.
+SMTP_HOST = leer("SMTP_HOST", "mailpit")
+SMTP_PORT = int(leer("SMTP_PORT", "1025"))
+CORREO_REMITENTE = leer("CORREO_REMITENTE", "Hotel Soluna <reservas@soluna.test>")
+
+# Facturación electrónica (datos ficticios del emisor)
+IVA = Decimal("0.13")
+EMISOR_NOMBRE = "Hotel Soluna S.A."
+EMISOR_CEDULA = "3101999999"   # cédula jurídica ficticia
