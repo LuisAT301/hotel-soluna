@@ -1,12 +1,12 @@
 # =====================================================================
 # Hotel Soluna: prototipo en Docker Compose
-# Bloque 1: base de datos + API.
-# En los siguientes bloques se agregan Nginx (HTTPS y balanceo entre
-# tres réplicas), el simulador de servicios externos, Mailpit, los
-# respaldos, el nodo de contingencia y la prueba de carga.
+# Bloque 2: Nginx (HTTPS y balanceo) + 3 réplicas de la API + PostgreSQL.
+# En los siguientes bloques se agregan el simulador de servicios externos,
+# Mailpit, los respaldos, el nodo de contingencia y la prueba de carga.
 #
 # Uso:  cp .env.example .env   (y cambiar los valores)
-#       docker compose up --build
+#       docker compose up --build -d
+# Abrir: https://localhost
 # =====================================================================
 name: hotel-soluna
 
@@ -53,18 +53,44 @@ services:
     networks:
       - datos
       - backend
+    # Tres copias idénticas de la API; Nginx reparte las solicitudes entre ellas.
+    # Para escalar: docker compose up -d --scale api=5
+    deploy:
+      replicas: 3
+    # Sin "ports": a la API solo se llega a través de Nginx
+    restart: unless-stopped
+
+  nginx:
+    build: ./nginx
     ports:
-      - "8000:8000"   # temporal: en el bloque 2 solo Nginx quedará publicado
+      - "80:80"     # redirige a HTTPS
+      - "443:443"   # único punto de entrada al sistema
+    volumes:
+      - ./web:/usr/share/nginx/html:ro   # interfaz web
+      - certificados:/etc/nginx/certs    # certificado autofirmado (se crea al primer arranque)
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/salud-nginx || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
 
 networks:
-  # Red interna: sin salida a Internet ni acceso desde el equipo anfitrión
+  # Red interna: sin salida a Internet ni acceso desde el equipo anfitrión.
+  # Solo la API y PostgreSQL están en ella.
   datos:
     internal: true
+  # Red entre Nginx y la API (en el bloque 3 se suman el simulador y Mailpit)
   backend: {}
 
 volumes:
   db_datos: {}
+  certificados: {}
 
 # Los secretos se toman del archivo .env (que no se sube al repositorio)
 # y llegan a cada contenedor como archivos en /run/secrets/
