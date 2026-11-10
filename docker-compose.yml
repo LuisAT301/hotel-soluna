@@ -1,8 +1,9 @@
 # =====================================================================
 # Hotel Soluna: prototipo en Docker Compose
 # Bloque 2: Nginx (HTTPS y balanceo) + 3 réplicas de la API + PostgreSQL.
-# En los siguientes bloques se agregan el simulador de servicios externos,
-# Mailpit, los respaldos, el nodo de contingencia y la prueba de carga.
+# Bloque 3: simulador de servicios externos (pasarela, Hacienda, OTA) + Mailpit.
+# En los siguientes bloques se agregan los respaldos, el nodo de contingencia
+# y la prueba de carga.
 #
 # Uso:  cp .env.example .env   (y cambiar los valores)
 #       docker compose up --build -d
@@ -43,10 +44,17 @@ services:
       DB_PASSWORD_FILE: /run/secrets/db_app_password
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       DEMO_PASSWORD_FILE: /run/secrets/demo_password
+      SERVICIOS_LLAVE_FILE: /run/secrets/servicios_llave
+      OTA_SECRETO_FILE: /run/secrets/ota_secreto
+      SIMULADOR_URL: http://simulador:8000
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
     secrets:
       - db_app_password
       - jwt_secret
       - demo_password
+      - servicios_llave
+      - ota_secreto
     depends_on:
       db:
         condition: service_healthy
@@ -71,10 +79,48 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      simulador:
+        condition: service_healthy
     networks:
       - backend
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/salud-nginx || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # Simulador de los proveedores externos: pasarela de pago, Hacienda y OTA.
+  # Guarda su estado en memoria, por eso hay una sola copia.
+  # Panel para la demostración: http://localhost:8090/docs (solo en el propio equipo).
+  # Desde Internet solo se llega a /pasarela/tokens, a través de Nginx.
+  simulador:
+    build: ./simulador
+    environment:
+      API_URL: http://api:8000
+      SERVICIOS_LLAVE_FILE: /run/secrets/servicios_llave
+      OTA_SECRETO_FILE: /run/secrets/ota_secreto
+    secrets:
+      - servicios_llave
+      - ota_secreto
+    networks:
+      - backend
+    ports:
+      - "127.0.0.1:8090:8000"
+    restart: unless-stopped
+
+  # Servidor de correo de prueba: recibe todos los correos que envía la API
+  # y los muestra en http://localhost:8025 sin entregarlos a nadie.
+  mailpit:
+    image: axllent/mailpit:v1.32
+    environment:
+      MP_MAX_MESSAGES: "1000"
+    networks:
+      - backend
+    ports:
+      - "127.0.0.1:8025:8025"   # bandeja web, solo en el propio equipo
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -104,7 +150,7 @@ networks:
   # Solo la API y PostgreSQL están en ella.
   datos:
     internal: true
-  # Red entre Nginx y la API (en el bloque 3 se suman el simulador y Mailpit)
+  # Red entre Nginx, la API, el simulador de servicios externos y Mailpit
   backend: {}
   # Red para publicar herramientas de desarrollo (Adminer) en el propio equipo
   herramientas: {}
@@ -126,3 +172,7 @@ secrets:
     environment: JWT_SECRET
   demo_password:
     environment: DEMO_PASSWORD
+  servicios_llave:
+    environment: SERVICIOS_LLAVE
+  ota_secreto:
+    environment: OTA_SECRETO

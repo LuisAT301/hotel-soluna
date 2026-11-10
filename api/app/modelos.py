@@ -79,7 +79,10 @@ class Reserva(Base):
     creada_en: Mapped[datetime] = mapped_column(server_default=func.now())
     actualizada_en: Mapped[datetime] = mapped_column(server_default=func.now())
 
+    referencia_externa: Mapped[str | None]   # número de reserva de la OTA
+
     habitacion: Mapped[Habitacion] = relationship(lazy="joined")
+    factura: Mapped["Factura | None"] = relationship(lazy="selectin", back_populates="reserva")
 
 
 class RegistroBitacora(Base):
@@ -92,3 +95,36 @@ class RegistroBitacora(Base):
     entidad: Mapped[str]
     entidad_id: Mapped[str | None]
     detalle: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class Pago(Base):
+    __tablename__ = "pagos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    tipo: Mapped[str]            # cobro o reembolso
+    estado: Mapped[str]          # aprobado o rechazado
+    transaccion: Mapped[str]
+    monto: Mapped[Decimal]
+    marca: Mapped[str | None]
+    ultimos4: Mapped[str | None]
+    motivo: Mapped[str | None]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Factura(Base):
+    __tablename__ = "facturas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    clave: Mapped[str]
+    consecutivo: Mapped[str]
+    subtotal: Mapped[Decimal]
+    impuesto: Mapped[Decimal]
+    total: Mapped[Decimal]
+    estado: Mapped[str] = mapped_column(default="pendiente")
+    mensaje: Mapped[str | None]
+    emitida_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    respondida_en: Mapped[datetime | None]
+
+    reserva: Mapped[Reserva] = relationship(back_populates="factura")

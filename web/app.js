@@ -214,13 +214,28 @@ async function confirmarReserva(datos) {
   const reserva = await api('/api/reservas', { metodo: 'POST', json: datos });
   avisar(`Reserva ${reserva.codigo} creada: habitación ${reserva.habitacion}, ${ESTADOS[reserva.estado].toLowerCase()}.`);
   await Promise.all([buscar(ultimaBusqueda), cargarReservas()]);
+  // Una reserva en línea se paga enseguida para confirmarla
+  if (reserva.estado === 'pendiente_pago') abrirPago(reserva);
 }
 
 async function cargarReservas() {
   const reservas = await api('/api/reservas');
   const cancelable = (r) => ['pendiente_pago', 'confirmada'].includes(r.estado);
+  const acciones = (r) => {
+    const botones = [];
+    if (r.estado === 'pendiente_pago') {
+      botones.push(el('button', { clase: 'boton pequeno', type: 'button', onclick: () => abrirPago(r) }, 'Pagar'));
+    }
+    if (r.tiene_factura) {
+      botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => intentar(() => verFactura(r)) }, 'Factura'));
+    }
+    if (cancelable(r)) {
+      botones.push(el('button', { clase: 'boton peligro pequeno', type: 'button', onclick: () => intentar(() => cancelar(r)) }, 'Cancelar'));
+    }
+    return el('div', { clase: 'botones-fila' }, ...botones);
+  };
   $('#lista-reservas').replaceChildren(tabla(
-    ['Código', 'Huésped', 'Habitación', 'Entrada', 'Salida', 'Canal', 'Estado', 'Total', ''],
+    ['Código', 'Huésped', 'Habitación', 'Entrada', 'Salida', 'Canal', 'Estado', 'Total con IVA', ''],
     reservas.map((r) => [
       el('code', {}, r.codigo),
       r.nombre_huesped,
@@ -229,20 +244,64 @@ async function cargarReservas() {
       fechaCorta(r.fecha_salida),
       r.canal,
       etiquetaEstado(r.estado, ESTADOS),
-      dinero.format(Number(r.total)),
-      cancelable(r)
-        ? el('button', { clase: 'boton peligro pequeno', type: 'button', onclick: () => intentar(() => cancelar(r.codigo)) }, 'Cancelar')
-        : '',
+      dinero.format(Number(r.total_con_impuesto)),
+      acciones(r),
     ]),
     'Todavía no hay reservas.'));
 }
 
-async function cancelar(codigo) {
-  if (!window.confirm(`¿Cancelar la reserva ${codigo}?`)) return;
+async function cancelar(reserva) {
+  const { codigo } = reserva;
+  const pregunta = reserva.tiene_factura
+    ? `¿Cancelar la reserva ${codigo}? Se reembolsará el pago a la tarjeta.`
+    : `¿Cancelar la reserva ${codigo}?`;
+  if (!window.confirm(pregunta)) return;
   await api(`/api/reservas/${encodeURIComponent(codigo)}/cancelar`, { metodo: 'POST' });
-  avisar(`Reserva ${codigo} cancelada.`);
+  avisar(reserva.tiene_factura ? `Reserva ${codigo} cancelada y pago reembolsado.` : `Reserva ${codigo} cancelada.`);
   await cargarReservas();
   if (ultimaBusqueda) await buscar(ultimaBusqueda);
+}
+
+// ---------------------------------------------------------------------
+// Pago en línea y factura
+// La tarjeta se envía a la pasarela (/pasarela/tokens), que devuelve un
+// token de un solo uso; a la API del hotel solo llega ese token.
+// ---------------------------------------------------------------------
+let reservaPorPagar = null;
+
+function abrirPago(reserva) {
+  reservaPorPagar = reserva;
+  $('#form-pago').reset();
+  $('#error-pago').hidden = true;
+  $('#pago-codigo').textContent = reserva.codigo;
+  $('#pago-subtotal').textContent = dinero.format(Number(reserva.total));
+  $('#pago-impuesto').textContent = dinero.format(Number(reserva.impuesto));
+  $('#pago-total').textContent = dinero.format(Number(reserva.total_con_impuesto));
+  $('#dlg-pago').showModal();
+}
+
+async function pagar(formulario) {
+  const tarjeta = Object.fromEntries(new FormData(formulario));
+  const { token } = await api('/pasarela/tokens', { metodo: 'POST', json: tarjeta });
+  const pago = await api(`/api/reservas/${encodeURIComponent(reservaPorPagar.codigo)}/pago`,
+    { metodo: 'POST', json: { token } });
+  $('#dlg-pago').close();
+  avisar(`Pago aprobado: ${dinero.format(Number(pago.monto))} con ${pago.marca} terminada en ${pago.ultimos4}. `
+    + `Reserva ${pago.reserva.codigo} confirmada; la factura se envió a su correo.`);
+  await cargarReservas();
+}
+
+async function verFactura(reserva) {
+  const f = await api(`/api/reservas/${encodeURIComponent(reserva.codigo)}/factura`);
+  $('#factura-reserva').textContent = reserva.codigo;
+  $('#factura-consecutivo').textContent = f.consecutivo;
+  $('#factura-estado').replaceChildren(etiquetaEstado(f.estado, { aceptada: 'Aceptada', rechazada: 'Rechazada', pendiente: 'Pendiente de envío' }));
+  $('#factura-fecha').textContent = new Date(f.emitida_en).toLocaleString('es-CR');
+  $('#factura-subtotal').textContent = dinero.format(Number(f.subtotal));
+  $('#factura-impuesto').textContent = dinero.format(Number(f.impuesto));
+  $('#factura-total').textContent = dinero.format(Number(f.total));
+  $('#factura-clave').textContent = f.clave;
+  $('#dlg-factura').showModal();
 }
 
 // ---------------------------------------------------------------------
@@ -397,6 +456,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const huesped = Object.fromEntries(new FormData(evento.target));
     $('#dlg-huesped').close();
     intentar(() => confirmarReserva({ ...reservaPendiente, ...huesped }));
+  });
+
+  $('#form-pago').addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    const boton = $('#btn-pagar');
+    boton.disabled = true;
+    $('#error-pago').hidden = true;
+    pagar(evento.target)
+      .catch((error) => {
+        $('#error-pago').textContent = error.message;
+        $('#error-pago').hidden = false;
+      })
+      .finally(() => { boton.disabled = false; });
   });
 
   $('#form-usuario').addEventListener('submit', (evento) => {

@@ -3,17 +3,18 @@ import secrets
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from psycopg import errors as pg_errores
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import config
+from .. import config, correo, servicios_externos
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol, usuario_actual
 from ..esquemas import Disponible, NuevaReserva, ReservaSalida
-from ..modelos import Habitacion, Reserva, Tarifa, TipoHabitacion, Usuario
+from ..facturacion import impuesto_de
+from ..modelos import Habitacion, Pago, Reserva, Tarifa, TipoHabitacion, Usuario
 
 router = APIRouter(prefix="/api", tags=["reservas"])
 
@@ -69,18 +70,60 @@ def salida_reserva(r: Reserva) -> ReservaSalida:
         canal=r.canal,
         estado=r.estado,
         total=r.total,
+        impuesto=impuesto_de(r.total),
+        total_con_impuesto=r.total + impuesto_de(r.total),
+        tiene_factura=r.factura is not None,
         creada_en=r.creada_en,
     )
 
 
-def buscar_reserva(sesion: Session, codigo: str, usuario: Usuario) -> Reserva:
+def buscar_reserva(sesion: Session, codigo: str, usuario: Usuario, bloquear: bool = False) -> Reserva:
+    """Busca la reserva y verifica que el usuario pueda verla.
+
+    Con bloquear=True la fila queda reservada para esta transacción: si llegan
+    dos pagos o dos cancelaciones a la vez desde réplicas distintas, el
+    segundo espera a que termine el primero y luego ve el estado ya cambiado.
+    """
     if usuario.rol not in ("cliente", "recepcionista", "gerente"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Su rol no tiene permiso para esta acción")
-    reserva = sesion.scalar(select(Reserva).where(Reserva.codigo == codigo.upper()))
+    if bloquear:
+        sesion.execute(select(Reserva.id).where(Reserva.codigo == codigo.upper()).with_for_update())
+    reserva = sesion.scalar(select(Reserva).where(Reserva.codigo == codigo.upper())
+                            .execution_options(populate_existing=True))
     # Un cliente solo ve sus propias reservas; para él, las ajenas "no existen"
     if reserva is None or (usuario.rol == "cliente" and reserva.cliente_id != usuario.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Reserva no encontrada")
     return reserva
+
+
+def habitaciones_libres(sesion: Session, entrada: date, salida: date, personas: int,
+                        tipo_id: int | None = None) -> list[Habitacion]:
+    """Habitaciones en servicio, con capacidad suficiente y sin reservas activas en esas fechas."""
+    ocupadas = select(Reserva.habitacion_id).where(
+        Reserva.estado != "cancelada",
+        Reserva.fecha_entrada < salida,
+        Reserva.fecha_salida > entrada,
+    )
+    consulta = (
+        select(Habitacion)
+        .join(TipoHabitacion, Habitacion.tipo_id == TipoHabitacion.id)
+        .where(
+            Habitacion.fuera_de_servicio.is_(False),
+            TipoHabitacion.capacidad >= personas,
+            Habitacion.id.not_in(ocupadas),
+        )
+        .order_by(TipoHabitacion.capacidad, Habitacion.numero)
+    )
+    if tipo_id is not None:
+        consulta = consulta.where(Habitacion.tipo_id == tipo_id)
+    return list(sesion.scalars(consulta))
+
+
+def correo_confirmacion(tareas: BackgroundTasks, reserva: Reserva, extra: str = "") -> None:
+    tareas.add_task(
+        correo.enviar, reserva.correo_huesped, f"Reserva confirmada {reserva.codigo}",
+        f"Hola, {reserva.nombre_huesped}:\n\nSu reserva en el Hotel Soluna está confirmada.\n\n"
+        f"{correo.detalle_reserva(reserva)}\n{extra}")
 
 
 # ---------------------------------------------------------------------
@@ -94,22 +137,7 @@ def disponibilidad(
     sesion: Session = Depends(obtener_sesion),
 ):
     validar_fechas(entrada, salida)
-    # Habitaciones con una reserva activa que se cruza con las fechas pedidas
-    ocupadas = select(Reserva.habitacion_id).where(
-        Reserva.estado != "cancelada",
-        Reserva.fecha_entrada < salida,
-        Reserva.fecha_salida > entrada,
-    )
-    habitaciones = sesion.scalars(
-        select(Habitacion)
-        .join(TipoHabitacion, Habitacion.tipo_id == TipoHabitacion.id)
-        .where(
-            Habitacion.fuera_de_servicio.is_(False),
-            TipoHabitacion.capacidad >= personas,
-            Habitacion.id.not_in(ocupadas),
-        )
-        .order_by(TipoHabitacion.capacidad, Habitacion.numero)
-    ).all()
+    habitaciones = habitaciones_libres(sesion, entrada, salida, personas)
 
     totales: dict[int, Decimal] = {}
     resultado = []
@@ -129,6 +157,7 @@ def disponibilidad(
 @router.post("/reservas", response_model=ReservaSalida, status_code=201)
 def crear_reserva(
     datos: NuevaReserva,
+    tareas: BackgroundTasks,
     sesion: Session = Depends(obtener_sesion),
     usuario: Usuario = Depends(PUEDEN_RESERVAR),
 ):
@@ -179,6 +208,8 @@ def crear_reserva(
               salida=str(datos.fecha_salida), canal=canal)
     sesion.commit()
     sesion.refresh(reserva)
+    if reserva.estado == "confirmada":
+        correo_confirmacion(tareas, reserva, "\nEl pago se realiza en la recepción del hotel.")
     return salida_reserva(reserva)
 
 
@@ -209,15 +240,41 @@ def ver_reserva(codigo: str, sesion: Session = Depends(obtener_sesion),
 
 
 @router.post("/reservas/{codigo}/cancelar", response_model=ReservaSalida)
-def cancelar_reserva(codigo: str, sesion: Session = Depends(obtener_sesion),
+def cancelar_reserva(codigo: str, tareas: BackgroundTasks, sesion: Session = Depends(obtener_sesion),
                      usuario: Usuario = Depends(usuario_actual)):
-    reserva = buscar_reserva(sesion, codigo, usuario)
+    reserva = buscar_reserva(sesion, codigo, usuario, bloquear=True)
     if reserva.estado not in ESTADOS_CANCELABLES:
         raise HTTPException(status.HTTP_409_CONFLICT, f"No se puede cancelar una reserva {reserva.estado}")
+
+    # Si se pagó en línea, primero se devuelve el dinero. Si la pasarela no
+    # responde, la reserva NO se cancela: así nunca queda cancelada sin reembolso.
+    cobro = sesion.scalar(select(Pago).where(Pago.reserva_id == reserva.id, Pago.tipo == "cobro",
+                                             Pago.estado == "aprobado"))
+    reembolso = None
+    if cobro is not None:
+        try:
+            resultado = servicios_externos.reembolsar(cobro.transaccion)
+        except (servicios_externos.ServicioNoDisponible, servicios_externos.SolicitudRechazada):
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                                "La pasarela de pago no responde y no se pudo hacer el reembolso. "
+                                "La reserva sigue activa; intente de nuevo en unos minutos.")
+        reembolso = Pago(reserva_id=reserva.id, tipo="reembolso", estado=resultado["estado"],
+                         transaccion=resultado["transaccion"], monto=cobro.monto,
+                         marca=cobro.marca, ultimos4=cobro.ultimos4)
+        sesion.add(reembolso)
+        registrar(sesion, usuario, "reembolso", "reserva", reserva.codigo,
+                  transaccion=reembolso.transaccion, monto=str(cobro.monto))
+
     anterior = reserva.estado
     reserva.estado = "cancelada"
     reserva.actualizada_en = func.now()
     registrar(sesion, usuario, "cancelar_reserva", "reserva", reserva.codigo, estado_anterior=anterior)
     sesion.commit()
     sesion.refresh(reserva)
+
+    aviso = (f"\nSe reembolsaron USD {reembolso.monto} a la tarjeta {reembolso.marca} terminada en "
+             f"{reembolso.ultimos4}. Puede tardar unos días en reflejarse.\n") if reembolso else ""
+    tareas.add_task(correo.enviar, reserva.correo_huesped, f"Reserva cancelada {reserva.codigo}",
+                    f"Hola, {reserva.nombre_huesped}:\n\nSu reserva {reserva.codigo} del "
+                    f"{reserva.fecha_entrada:%d/%m/%Y} al {reserva.fecha_salida:%d/%m/%Y} fue cancelada.\n{aviso}")
     return salida_reserva(reserva)
