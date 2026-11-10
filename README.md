@@ -68,8 +68,9 @@ Redes de Docker:
 git clone https://github.com/LuisAT301/hotel-soluna.git
 cd hotel-soluna
 
-# 1. Crear el archivo de secretos a partir de la plantilla y cambiar los valores
-cp .env.example .env          # en PowerShell: Copy-Item .env.example .env
+# 1. Crear el archivo .env con todas las contraseñas (no hay que editarlo)
+sh crear-env.sh               # Mac y Linux
+# En Windows (PowerShell):  powershell -ExecutionPolicy Bypass -File .\crear-env.ps1
 
 # 2. Construir y levantar los contenedores
 docker compose up --build -d
@@ -85,10 +86,13 @@ Luego abrir:
 - Correos enviados por el sistema (Mailpit): <http://localhost:8025>
 - Panel del simulador de servicios externos: <http://localhost:8090/docs>
 
-**Si ya tenían el proyecto del bloque 2 funcionando:**
+El script llena el `.env` con contraseñas al azar y deja la de las cuentas de demostración en `SolunaDemo2026`.
+Si ya existía un `.env`, guarda una copia en `.env.anterior`. Quien prefiera hacerlo a mano puede copiar
+`.env.example` como `.env` y cambiar los valores.
 
-1. Agreguen a su `.env` las variables nuevas `SERVICIOS_LLAVE` y `OTA_SECRETO` (ver `.env.example`).
-2. Recreen la base, porque el bloque 3 agrega tablas: `docker compose down -v`, luego `docker compose up --build -d` y de nuevo el paso 3.
+**Si ya tenían el proyecto del bloque 2 funcionando:** ejecuten de nuevo el script (agrega las variables nuevas
+del bloque 3) y recreen la base, porque hay tablas nuevas: `docker compose down -v`, luego `docker compose up --build -d`
+y de nuevo el paso 3.
 
 El certificado es autofirmado, así que el navegador mostrará una advertencia la primera vez:
 
@@ -99,7 +103,7 @@ En producción se usaría un certificado emitido por una autoridad.
 
 ### Cuentas de demostración
 
-Todas usan la contraseña definida en `DEMO_PASSWORD` dentro de `.env`.
+Todas usan la contraseña definida en `DEMO_PASSWORD` dentro de `.env` (`SolunaDemo2026` si lo creó el script).
 
 | Correo | Rol |
 |---|---|
@@ -371,7 +375,17 @@ casi siempre falta un secreto en `.env`. Docker lo indica al final de la salida,
 environment variable "SERVICIOS_LLAVE" required by secret "hotel-soluna_servicios_llave" is not set
 ```
 
-Solución: compare su `.env` con `.env.example`, agregue las variables que falten (desde el bloque 3, `SERVICIOS_LLAVE` y `OTA_SECRETO`) y vuelva a ejecutar `docker compose up --build -d`.
+Si la variable que falta es `POSTGRES_PASSWORD`, Docker no está encontrando el `.env`: no existe en la carpeta
+donde ejecutó el comando, o se guardó con otro nombre (por ejemplo, `.env.txt`).
+
+Solución en ambos casos: cree el `.env` de nuevo con el script del paso 1 de "Cómo ejecutar" y vuelva a levantar:
+
+```bash
+sh crear-env.sh               # en Windows: powershell -ExecutionPolicy Bypass -File .\crear-env.ps1
+docker compose down -v
+docker compose up --build -d
+docker compose exec api python -m app.seed
+```
 
 ### Todo enciende, pero reservar o pagar da error
 
@@ -423,6 +437,7 @@ docker compose logs simulador        # cambie "simulador" por el servicio que fa
 hotel-soluna/
 ├── docker-compose.yml
 ├── .env.example          plantilla de secretos (el .env real no se sube)
+├── crear-env.sh / .ps1   crean el .env con contraseñas al azar (Mac y Linux / Windows)
 ├── db/init/              esquema, catálogo y usuarios de la base
 ├── nginx/                imagen de Nginx: HTTPS, balanceo y cabeceras de seguridad
 ├── web/                  interfaz web (HTML, CSS y JavaScript)
