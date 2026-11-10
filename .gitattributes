@@ -1,0 +1,11 @@
+# Finales de línea LF en todos los archivos de texto, también en Windows.
+# Sin esto, Git en Windows puede convertir los scripts a CRLF y los
+# contenedores Linux fallan al ejecutarlos.
+* text=auto eol=lf
+
+# Archivos binarios: Git no debe tocarlos
+*.png  binary
+*.jpg  binary
+*.pkt  binary
+*.docx binary
+*.pdf  binary

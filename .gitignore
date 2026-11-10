@@ -1,0 +1,19 @@
+# Secretos: nunca al repositorio
+.env
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Respaldos generados en la demostración
+respaldos/
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
