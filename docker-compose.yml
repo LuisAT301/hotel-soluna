@@ -1,0 +1,81 @@
+# =====================================================================
+# Hotel Soluna: prototipo en Docker Compose
+# Bloque 1: base de datos + API.
+# En los siguientes bloques se agregan Nginx (HTTPS y balanceo entre
+# tres réplicas), el simulador de servicios externos, Mailpit, los
+# respaldos, el nodo de contingencia y la prueba de carga.
+#
+# Uso:  cp .env.example .env   (y cambiar los valores)
+#       docker compose up --build
+# =====================================================================
+name: hotel-soluna
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: hotel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
+    secrets:
+      - db_admin_password
+      - db_app_password
+      - db_respaldo_password
+    volumes:
+      - db_datos:/var/lib/postgresql/data          # datos persistentes
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # esquema, catálogo y usuarios de BD
+    networks:
+      - datos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    # Sin "ports": la base no se publica fuera de Docker
+
+  api:
+    build: ./api
+    environment:
+      DB_HOST: db
+      DB_NAME: hotel
+      DB_USER: app_hotel
+      DB_PASSWORD_FILE: /run/secrets/db_app_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      DEMO_PASSWORD_FILE: /run/secrets/demo_password
+    secrets:
+      - db_app_password
+      - jwt_secret
+      - demo_password
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - datos
+      - backend
+    ports:
+      - "8000:8000"   # temporal: en el bloque 2 solo Nginx quedará publicado
+    restart: unless-stopped
+
+networks:
+  # Red interna: sin salida a Internet ni acceso desde el equipo anfitrión
+  datos:
+    internal: true
+  backend: {}
+
+volumes:
+  db_datos: {}
+
+# Los secretos se toman del archivo .env (que no se sube al repositorio)
+# y llegan a cada contenedor como archivos en /run/secrets/
+secrets:
+  db_admin_password:
+    environment: POSTGRES_PASSWORD
+  db_app_password:
+    environment: DB_APP_PASSWORD
+  db_respaldo_password:
+    environment: DB_RESPALDO_PASSWORD
+  jwt_secret:
+    environment: JWT_SECRET
+  demo_password:
+    environment: DEMO_PASSWORD
