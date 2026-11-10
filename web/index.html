@@ -108,6 +108,51 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-pago">
+    <form id="form-pago" method="dialog">
+      <h2>Pagar reserva <span id="pago-codigo"></span></h2>
+      <dl class="montos">
+        <dt>Hospedaje</dt><dd id="pago-subtotal"></dd>
+        <dt>IVA (13 %)</dt><dd id="pago-impuesto"></dd>
+        <dt class="total">Total a pagar</dt><dd id="pago-total" class="total"></dd>
+      </dl>
+      <label>Número de tarjeta <input name="numero" inputmode="numeric" autocomplete="cc-number" required
+        pattern="[0-9 ]{12,23}" placeholder="4242 4242 4242 4242"></label>
+      <label>Nombre en la tarjeta <input name="titular" autocomplete="cc-name" required minlength="2"></label>
+      <div class="fila compacta">
+        <label>Vencimiento <input name="vencimiento" autocomplete="cc-exp" required pattern="(0[1-9]|1[0-2])/[0-9]{2}" placeholder="MM/AA"></label>
+        <label>CVV <input name="cvv" inputmode="numeric" autocomplete="cc-csc" required pattern="[0-9]{3,4}" placeholder="123"></label>
+      </div>
+      <p class="nota">Prototipo: use la tarjeta de prueba 4242 4242 4242 4242 (aprobada)
+        o 4000 0000 0000 0002 (rechazada), con cualquier vencimiento futuro.
+        Los datos de la tarjeta van directo a la pasarela; el hotel no los recibe.</p>
+      <p id="error-pago" class="aviso error" hidden></p>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cancelar</button>
+        <button id="btn-pagar" class="boton" type="submit" value="enviar">Pagar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-factura">
+    <form method="dialog">
+      <h2>Factura electrónica</h2>
+      <dl class="montos">
+        <dt>Reserva</dt><dd id="factura-reserva"></dd>
+        <dt>Consecutivo</dt><dd><code id="factura-consecutivo"></code></dd>
+        <dt>Estado en Hacienda</dt><dd id="factura-estado"></dd>
+        <dt>Emitida</dt><dd id="factura-fecha"></dd>
+        <dt>Subtotal</dt><dd id="factura-subtotal"></dd>
+        <dt>IVA (13 %)</dt><dd id="factura-impuesto"></dd>
+        <dt class="total">Total</dt><dd id="factura-total" class="total"></dd>
+      </dl>
+      <label>Clave numérica <code id="factura-clave" class="clave"></code></label>
+      <div class="acciones">
+        <button class="boton" type="submit">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
   <footer class="pie">
     Prototipo académico (ULACIT) · Respondió la réplica <code id="replica">…</code>
   </footer>

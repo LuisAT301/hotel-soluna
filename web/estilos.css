@@ -109,9 +109,9 @@ th { color: var(--gris); font-weight: 600; background: #FBF8F2; }
 td code { font-size: .85rem; }
 
 .estado { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .8rem; font-weight: 600; background: #E8EEF2; }
-.estado.confirmada, .estado.limpia, .estado.inspeccionada { background: #DDF0EC; color: #145C58; }
-.estado.pendiente_pago, .estado.en_limpieza { background: #FCEBD7; color: #8A4B12; }
-.estado.cancelada, .estado.sucia { background: #F6DCD6; color: #8E3524; }
+.estado.confirmada, .estado.limpia, .estado.inspeccionada, .estado.aceptada { background: #DDF0EC; color: #145C58; }
+.estado.pendiente_pago, .estado.en_limpieza, .estado.pendiente { background: #FCEBD7; color: #8A4B12; }
+.estado.cancelada, .estado.sucia, .estado.rechazada { background: #F6DCD6; color: #8E3524; }
 
 .vacio { color: var(--gris); font-style: italic; }
 .nota { color: var(--gris); font-size: .9rem; margin: 0 0 12px; }
@@ -127,6 +127,17 @@ dialog::backdrop { background: rgba(11, 60, 93, .45); }
 dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog input { width: 100%; }
 .acciones { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px; }
+
+/* Pago y factura */
+.montos { display: grid; grid-template-columns: 1fr auto; row-gap: 4px; margin: 0; font-size: .95rem; }
+.montos dt { color: var(--gris); }
+.montos dd { margin: 0; padding-left: 16px; text-align: right; }
+.montos .total { font-weight: 700; color: var(--texto); border-top: 1px solid var(--borde); padding-top: 4px; }
+.fila.compacta { margin: 0; flex-wrap: nowrap; }
+.fila.compacta label { flex: 1; }
+.fila.compacta input { min-width: 0; }
+.clave { word-break: break-all; color: var(--texto); font-size: .85rem; }
+.botones-fila { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .pie { text-align: center; color: var(--gris); font-size: .85rem; padding: 16px; }
 
