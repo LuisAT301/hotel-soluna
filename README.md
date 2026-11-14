@@ -119,14 +119,30 @@ En la interfaz web, use **Iniciar sesión**. En `/api/docs`, use el botón **Aut
 
 | Rol | Secciones |
 |---|---|
-| Público | Disponibilidad (para reservar debe iniciar sesión o crear una cuenta) |
-| Cliente | Disponibilidad, Mis reservas (paga en línea y consulta su factura) |
+| Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
+| Cliente | La misma página de inicio, más Mis reservas (paga en línea y consulta su factura) |
 | Recepcionista | Disponibilidad, Reservas, Habitaciones (puede reservar a nombre de un huésped) |
 | Limpieza | Habitaciones (cambia el estado de limpieza) |
 | Mantenimiento | Habitaciones (solo lectura) |
-| Gerente | Todo lo anterior, más Cuentas del personal y Bitácora |
+| Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
 
+El personal entra directo a su panel de trabajo, sin la página de inicio.
 El pie de página muestra qué réplica de la API respondió la última solicitud.
+
+### Página de inicio
+
+- **Foto de fondo:** hoy es una ilustración de Playa Sámara (`web/img/playa-samara.svg`). Para usar una foto
+  real, guárdela como `web/img/playa-samara.jpg` (ancho recomendado: 1920 px) y recargue la página: reemplaza
+  a la ilustración sin tocar el código. Use una foto propia o con licencia que permita su uso.
+- **Logo:** `web/img/logo.svg`, un círculo mitad sol y mitad luna sobre el mar. También es el ícono de la pestaña.
+- **Suscripción por correo:** el campo de "Ofertas y novedades" guarda el correo en la tabla `suscriptores`
+  y envía una bienvenida. Gerencia ve la lista en su panel; el mismo correo no se repite y la respuesta no revela
+  si ya estaba suscrito. Nginx limita la ruta a 5 intentos por minuto por IP.
+- **Envío real de correos:** hoy todo lo captura Mailpit. Para usar un servicio de envío (Brevo, SendGrid,
+  Amazon SES, Resend u otro con SMTP), basta con definir en el servicio `api` de `docker-compose.yml`:
+  `SMTP_HOST`, `SMTP_PORT` (normalmente 587), `SMTP_USUARIO`, `SMTP_PASSWORD_FILE` (como secreto de Docker),
+  `SMTP_TLS: "si"` y `CORREO_REMITENTE` con un dominio verificado en el servicio.
+- **Datos ficticios:** el hotel, el teléfono, la dirección y las reseñas son de demostración.
 
 ## Demostraciones del bloque 2
 
@@ -356,6 +372,9 @@ Para volver a la base en Docker, ejecute `crear-env` y elija la opción **1**.
 | POST | `/api/reservas/{codigo}/pago` | Dueño de la reserva, recepcionista, gerente *(bloque 3)* |
 | GET | `/api/reservas/{codigo}/factura` | Dueño de la reserva, recepcionista, gerente *(bloque 3)* |
 | POST | `/api/integraciones/ota/reservas` | Solo la OTA, con un aviso firmado *(bloque 3)* |
+| GET | `/api/tipos-habitacion` | Público: tipos de habitación con su precio más bajo, para la página de inicio |
+| POST | `/api/suscripciones` | Público: guarda un correo para ofertas y novedades (5 por minuto por IP) |
+| GET | `/api/suscripciones` | Gerente |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
@@ -403,7 +422,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 43 pruebas automáticas. Cubren:
+`api/tests` contiene 48 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -419,6 +438,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - Reembolso al cancelar una reserva pagada.
   - Avisos de la OTA: firma válida, firma falsa, cuerpo alterado, aviso viejo, aviso repetido y sin disponibilidad.
   - Correos de confirmación y cancelación.
+- Página de inicio: catálogo público y suscripción por correo (sin duplicados, correo inválido y acceso solo de gerencia).
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 
@@ -500,7 +520,8 @@ hotel-soluna/
 ├── db/init/              esquema, catálogo y usuarios de la base local (Docker)
 ├── supabase/migrations/  el mismo esquema para Supabase (esquema "hotel")
 ├── nginx/                imagen de Nginx: HTTPS, balanceo y cabeceras de seguridad
-├── web/                  interfaz web (HTML, CSS y JavaScript)
+├── web/                  sitio del hotel y panel del personal (HTML, CSS y JavaScript)
+│   └── img/              logo e ilustración de la playa
 ├── simulador/            pasarela de pago, Hacienda y OTA simuladas
 └── api/
     ├── Dockerfile
