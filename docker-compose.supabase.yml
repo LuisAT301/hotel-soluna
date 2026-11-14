@@ -1,0 +1,26 @@
+# =====================================================================
+# Hotel Soluna: modo Supabase
+# Se suma a docker-compose.yml y cambia una sola cosa: la API usa la base
+# de datos de Supabase en lugar del contenedor "db", que ya no se enciende.
+#
+# No hace falta escribir nada extra: si crear-env se ejecutó en modo
+# Supabase, el .env ya indica a Docker que use este archivo (COMPOSE_FILE).
+# =====================================================================
+services:
+  db:
+    profiles: ["solo-local"]   # la base local queda apagada
+
+  api:
+    depends_on: !reset {}
+    environment:
+      # Pooler de Supabase en modo sesión: funciona con IPv4, a diferencia de
+      # la conexión directa, que solo usa IPv6 y Docker Desktop no la soporta.
+      DB_HOST: ${SUPABASE_HOST:?Falta SUPABASE_HOST en .env (ejecute crear-env en modo Supabase)}
+      DB_PORT: "5432"
+      DB_NAME: postgres
+      # El pooler identifica el proyecto con "rol.referencia"
+      DB_USER: app_hotel.${SUPABASE_REF:?Falta SUPABASE_REF en .env (ejecute crear-env en modo Supabase)}
+      DB_SSLMODE: require
+      # El plan gratuito admite pocas conexiones: 3 réplicas x (2 + 2) = 12
+      DB_POOL: "2"
+      DB_POOL_EXTRA: "2"

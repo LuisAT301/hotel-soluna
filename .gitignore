@@ -1,6 +1,7 @@
 # Secretos: nunca al repositorio
 .env
 .env.anterior
+activar-roles-supabase.sql
 secrets/
 
 # Python

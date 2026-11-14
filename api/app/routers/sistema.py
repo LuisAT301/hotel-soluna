@@ -22,12 +22,14 @@ def salud(respuesta: Response, sesion: Session = Depends(obtener_sesion)):
     try:
         sesion.execute(text("SELECT 1"))
         base = "ok"
-        # Una base creada antes del bloque 3 no tiene la tabla de pagos: la API
-        # enciende, pero las reservas fallan. Se avisa en vez de fallar en silencio.
-        if sesion.execute(text("SELECT to_regclass('public.pagos')")).scalar() is None:
+        # Una base creada con una versión anterior no tiene las tablas nuevas
+        # (la más reciente es "suscriptores"): la API enciende, pero algunas
+        # funciones fallan. Se avisa en vez de fallar en silencio.
+        # Sin esquema explícito: sirve con "public" (Docker) y con "hotel" (Supabase)
+        if sesion.execute(text("SELECT to_regclass('suscriptores')")).scalar() is None:
             base = "desactualizada: ejecute docker compose down -v y vuelva a levantar"
             if not _aviso_esquema_dado:
-                registro.error("La base de datos no tiene las tablas del bloque 3. "
+                registro.error("La base de datos es de una versión anterior y le faltan tablas. "
                                "Ejecute 'docker compose down -v' y luego 'docker compose up --build -d'.")
                 _aviso_esquema_dado = True
     except Exception:  # noqa: BLE001 - cualquier falla de la base cuenta como caída
