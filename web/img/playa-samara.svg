@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <!-- Ilustración de Playa Sámara al atardecer, con la Isla Chora en el horizonte.
+       Se reemplaza sola si se agrega una foto real en web/img/playa-samara.jpg -->
+  <defs>
+    <linearGradient id="cielo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16425f"/>
+      <stop offset=".45" stop-color="#5f8fa8"/>
+      <stop offset=".78" stop-color="#f3c48a"/>
+      <stop offset="1" stop-color="#f9dcae"/>
+    </linearGradient>
+    <radialGradient id="resplandor" cx=".62" cy=".5" r=".35">
+      <stop offset="0" stop-color="#ffe6b5" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#ffe6b5" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f8c98"/>
+      <stop offset=".55" stop-color="#21707c"/>
+      <stop offset="1" stop-color="#1c8f8a"/>
+    </linearGradient>
+    <linearGradient id="arena" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#efd9ad"/>
+      <stop offset="1" stop-color="#d8b783"/>
+    </linearGradient>
+    <linearGradient id="mojada" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9a877"/>
+      <stop offset="1" stop-color="#e3c897"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#cielo)"/>
+  <rect width="1600" height="900" fill="url(#resplandor)"/>
+  <circle cx="1000" cy="455" r="62" fill="#fff1d2"/>
+
+  <!-- Nubes suaves -->
+  <g fill="#fbe7c9" opacity=".55">
+    <ellipse cx="420" cy="250" rx="170" ry="16"/>
+    <ellipse cx="520" cy="236" rx="110" ry="12"/>
+    <ellipse cx="1240" cy="300" rx="190" ry="14"/>
+    <ellipse cx="1330" cy="288" rx="90" ry="10"/>
+  </g>
+
+  <!-- Cerros de la bahía a la izquierda y la Isla Chora en el horizonte -->
+  <path d="M0 470 C120 400 240 395 340 430 C420 455 470 470 560 498 L0 498Z" fill="#2c5a52"/>
+  <path d="M0 498 C150 455 290 460 430 498Z" fill="#244b45"/>
+  <path d="M1180 498 C1210 476 1250 468 1290 472 C1330 476 1356 488 1380 498Z" fill="#33615a"/>
+
+  <!-- Mar con el reflejo del sol -->
+  <rect y="498" width="1600" height="200" fill="url(#mar)"/>
+  <g fill="#ffe6b5" opacity=".75">
+    <rect x="960" y="508" width="80" height="4" rx="2"/>
+    <rect x="940" y="526" width="120" height="4" rx="2"/>
+    <rect x="975" y="546" width="60" height="3" rx="1.5"/>
+    <rect x="925" y="566" width="150" height="4" rx="2"/>
+    <rect x="955" y="590" width="95" height="3" rx="1.5"/>
+    <rect x="905" y="616" width="190" height="4" rx="2"/>
+  </g>
+  <g fill="none" stroke="#bfe6e1" stroke-width="3" stroke-linecap="round" opacity=".55">
+    <path d="M60 560c40-8 80-8 120 0"/>
+    <path d="M300 600c50-9 100-9 150 0"/>
+    <path d="M1250 575c40-7 80-7 120 0"/>
+    <path d="M700 640c45-8 90-8 135 0"/>
+  </g>
+
+  <!-- Orilla: espuma, arena mojada y arena seca -->
+  <path d="M0 690 C260 668 520 700 800 684 C1080 668 1340 690 1600 676 L1600 900 L0 900Z" fill="url(#mojada)"/>
+  <path d="M0 690 C260 668 520 700 800 684 C1080 668 1340 690 1600 676" fill="none" stroke="#f7fbf8" stroke-width="7" stroke-linecap="round" opacity=".9"/>
+  <path d="M0 735 C300 712 620 748 900 728 C1180 710 1400 732 1600 720 L1600 900 L0 900Z" fill="url(#arena)"/>
+
+  <!-- Palmeras a contraluz -->
+  <g fill="#123a3f">
+    <path d="M168 900 C172 780 190 640 236 520 L248 524 C206 646 192 790 192 900Z"/>
+    <path d="M240 520 C200 470 130 460 70 492 C140 478 196 492 232 532Z"/>
+    <path d="M240 520 C230 455 180 410 120 404 C180 430 214 470 230 530Z"/>
+    <path d="M242 518 C282 462 344 446 404 470 C340 466 290 488 252 530Z"/>
+    <path d="M242 520 C296 506 350 530 380 580 C340 542 296 530 248 532Z"/>
+    <path d="M240 522 C224 566 186 600 140 610 C182 586 210 556 228 520Z"/>
+    <path d="M244 516 C252 466 280 426 324 404 C292 438 270 474 254 524Z"/>
+    <path d="M1488 900 C1484 800 1470 690 1438 590 L1448 586 C1484 688 1500 800 1508 900Z"/>
+    <path d="M1442 588 C1478 544 1534 532 1592 552 C1534 552 1490 566 1450 598Z"/>
+    <path d="M1442 588 C1410 546 1356 530 1300 544 C1356 548 1400 566 1436 600Z"/>
+    <path d="M1444 586 C1452 540 1484 506 1528 492 C1494 520 1468 552 1452 596Z"/>
+    <path d="M1442 590 C1424 628 1392 654 1352 662 C1390 640 1416 616 1432 586Z"/>
+  </g>
+</svg>
