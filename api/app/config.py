@@ -62,6 +62,11 @@ OTA_TOLERANCIA_SEGUNDOS = 300   # avisos con más de 5 minutos se rechazan (repe
 SMTP_HOST = leer("SMTP_HOST", "mailpit")
 SMTP_PORT = int(leer("SMTP_PORT", "1025"))
 CORREO_REMITENTE = leer("CORREO_REMITENTE", "Hotel Soluna <reservas@soluna.test>")
+# Para un servicio de envío real (Brevo, SendGrid, Amazon SES, Resend...): casi
+# todos aceptan SMTP con usuario y contraseña sobre TLS. Mailpit no los necesita.
+SMTP_USUARIO = leer("SMTP_USUARIO")
+SMTP_PASSWORD = leer("SMTP_PASSWORD")      # admite SMTP_PASSWORD_FILE (secreto de Docker)
+SMTP_TLS = (leer("SMTP_TLS", "no") or "no").lower() in ("si", "sí", "true", "1")
 
 # Facturación electrónica (datos ficticios del emisor)
 IVA = Decimal("0.13")

@@ -143,6 +143,33 @@ class ReservaOTA(BaseModel):
     correo_huesped: EmailStr
 
 
+class TipoHabitacionSalida(BaseModel):
+    """Catálogo público que muestra la página de inicio."""
+    nombre: str
+    capacidad: int
+    descripcion: str | None
+    precio_desde: Decimal       # tarifa por noche más baja (temporada baja)
+    habitaciones: int
+
+
+class NuevaSuscripcion(BaseModel):
+    correo: EmailStr
+
+    @field_validator("correo")
+    @classmethod
+    def a_minusculas(cls, v: str) -> str:
+        return v.lower()
+
+
+class SuscriptorSalida(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    correo: str
+    origen: str
+    activo: bool
+    creado_en: datetime
+
+
 class BitacoraSalida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
