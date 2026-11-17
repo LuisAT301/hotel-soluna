@@ -19,3 +19,6 @@ respaldos/
 Thumbs.db
 .vscode/
 .idea/
+
+# Vínculo local de la CLI de Vercel
+.vercel/

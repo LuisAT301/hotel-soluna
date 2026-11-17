@@ -14,7 +14,18 @@ from . import config
 registro = logging.getLogger("soluna.correo")
 
 
+def programar(tareas, destino: str, asunto: str, cuerpo: str) -> None:
+    """Envía después de responder (Docker) o en la misma solicitud (Vercel)."""
+    if config.CORREO_SEGUNDO_PLANO:
+        tareas.add_task(enviar, destino, asunto, cuerpo)
+    else:
+        enviar(destino, asunto, cuerpo)
+
+
 def enviar(destino: str, asunto: str, cuerpo: str) -> None:
+    if not config.SMTP_HOST or config.SMTP_HOST.lower() == "ninguno":
+        registro.warning("Sin servidor de correo configurado: no se envió '%s' a %s", asunto, destino)
+        return
     mensaje = EmailMessage()
     mensaje["From"] = config.CORREO_REMITENTE
     mensaje["To"] = destino
@@ -23,7 +34,7 @@ def enviar(destino: str, asunto: str, cuerpo: str) -> None:
     mensaje["Message-ID"] = make_msgid(domain="soluna.test")
     mensaje.set_content(cuerpo + "\n\nHotel Soluna · Playa Sámara, Guanacaste\n")
     try:
-        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as smtp:
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=5) as smtp:
             if config.SMTP_TLS:
                 smtp.starttls()          # cifra la conexión antes de enviar la contraseña
             if config.SMTP_USUARIO:

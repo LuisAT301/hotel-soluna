@@ -36,6 +36,10 @@ DB_SSLMODE = leer("DB_SSLMODE", "prefer")
 # Conexiones por réplica de la API (fijas + extra en momentos de carga)
 DB_POOL = int(leer("DB_POOL", "5"))
 DB_POOL_EXTRA = int(leer("DB_POOL_EXTRA", "5"))
+# "si" en Vercel: el pooler de Supabase en modo transacción (puerto 6543) reparte
+# las conexiones entre todas las instancias de la función. Entonces la API no
+# guarda conexiones abiertas ni usa sentencias preparadas (ese modo no las admite).
+DB_MODO_TRANSACCION = (leer("DB_MODO_TRANSACCION", "no") or "no").lower() in ("si", "sí", "true", "1")
 
 JWT_SECRET = obligatorio("JWT_SECRET")
 JWT_ALGORITMO = "HS256"
@@ -67,6 +71,9 @@ CORREO_REMITENTE = leer("CORREO_REMITENTE", "Hotel Soluna <reservas@soluna.test>
 SMTP_USUARIO = leer("SMTP_USUARIO")
 SMTP_PASSWORD = leer("SMTP_PASSWORD")      # admite SMTP_PASSWORD_FILE (secreto de Docker)
 SMTP_TLS = (leer("SMTP_TLS", "no") or "no").lower() in ("si", "sí", "true", "1")
+# "no" en Vercel: lo que corre después de responder puede quedar congelado, así
+# que el correo se envía dentro de la misma solicitud.
+CORREO_SEGUNDO_PLANO = (leer("CORREO_SEGUNDO_PLANO", "si") or "si").lower() in ("si", "sí", "true", "1")
 
 # Facturación electrónica (datos ficticios del emisor)
 IVA = Decimal("0.13")

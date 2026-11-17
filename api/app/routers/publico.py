@@ -48,8 +48,8 @@ def suscribirse(datos: NuevaSuscripcion, tareas: BackgroundTasks,
     sesion.commit()
 
     if nuevo is not None:
-        tareas.add_task(
-            correo.enviar, datos.correo, "Bienvenida a las novedades del Hotel Soluna",
+        correo.programar(
+            tareas, datos.correo, "Bienvenida a las novedades del Hotel Soluna",
             "Hola:\n\nGracias por suscribirse. Le escribiremos con ofertas de temporada, "
             "eventos en Playa Sámara y novedades del hotel.\n\n"
             "Si no pidió esta suscripción, puede ignorar este mensaje.")

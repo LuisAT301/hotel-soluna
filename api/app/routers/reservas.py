@@ -120,8 +120,8 @@ def habitaciones_libres(sesion: Session, entrada: date, salida: date, personas: 
 
 
 def correo_confirmacion(tareas: BackgroundTasks, reserva: Reserva, extra: str = "") -> None:
-    tareas.add_task(
-        correo.enviar, reserva.correo_huesped, f"Reserva confirmada {reserva.codigo}",
+    correo.programar(
+        tareas, reserva.correo_huesped, f"Reserva confirmada {reserva.codigo}",
         f"Hola, {reserva.nombre_huesped}:\n\nSu reserva en el Hotel Soluna está confirmada.\n\n"
         f"{correo.detalle_reserva(reserva)}\n{extra}")
 
@@ -274,7 +274,8 @@ def cancelar_reserva(codigo: str, tareas: BackgroundTasks, sesion: Session = Dep
 
     aviso = (f"\nSe reembolsaron USD {reembolso.monto} a la tarjeta {reembolso.marca} terminada en "
              f"{reembolso.ultimos4}. Puede tardar unos días en reflejarse.\n") if reembolso else ""
-    tareas.add_task(correo.enviar, reserva.correo_huesped, f"Reserva cancelada {reserva.codigo}",
-                    f"Hola, {reserva.nombre_huesped}:\n\nSu reserva {reserva.codigo} del "
-                    f"{reserva.fecha_entrada:%d/%m/%Y} al {reserva.fecha_salida:%d/%m/%Y} fue cancelada.\n{aviso}")
+    correo.programar(
+        tareas, reserva.correo_huesped, f"Reserva cancelada {reserva.codigo}",
+        f"Hola, {reserva.nombre_huesped}:\n\nSu reserva {reserva.codigo} del "
+        f"{reserva.fecha_entrada:%d/%m/%Y} al {reserva.fecha_salida:%d/%m/%Y} fue cancelada.\n{aviso}")
     return salida_reserva(reserva)
