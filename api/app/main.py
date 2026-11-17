@@ -2,7 +2,7 @@
 from fastapi import FastAPI, Request
 
 from .dependencias import REPLICA
-from .routers import auth, habitaciones, ota, pagos, reservas, sistema, usuarios
+from .routers import auth, habitaciones, ota, pagos, publico, reservas, sistema, usuarios
 
 app = FastAPI(
     title="API Hotel Soluna",
@@ -12,7 +12,7 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-for modulo in (auth, usuarios, habitaciones, reservas, pagos, ota, sistema):
+for modulo in (auth, usuarios, habitaciones, reservas, pagos, ota, publico, sistema):
     app.include_router(modulo.router)
 
 

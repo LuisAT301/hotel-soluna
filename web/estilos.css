@@ -1,47 +1,224 @@
-/* Hotel Soluna: estilos de la interfaz del prototipo */
+/* =====================================================================
+   Hotel Soluna: estilos del sitio y del panel del personal
+   Sin librerías ni fuentes externas: la política de seguridad (CSP) del
+   sitio solo permite archivos servidos por el propio hotel.
+   ===================================================================== */
 :root {
-  --oceano: #0B3C5D;
-  --laguna: #1D7874;
-  --arena: #F6F1E7;
-  --sol: #F2A65A;
+  --oceano: #0B3C5D;      /* azul profundo: marca, títulos */
+  --oceano-noche: #082436;
+  --laguna: #1D7874;      /* verde agua: acciones */
+  --laguna-claro: #DDF0EC;
+  --arena: #F6F1E7;       /* fondo general */
+  --arena-oscura: #EADFC9;
+  --sol: #F2A65A;         /* acento cálido */
+  --sol-oscuro: #B8661B;
   --coral: #C8553D;
   --texto: #1F2933;
   --gris: #5F6B76;
   --borde: #DAD3C5;
   --blanco: #FFFFFF;
   --radio: 10px;
+  --f-titulo: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --f-texto: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ancho: 1120px;
 }
 
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--f-texto);
   color: var(--texto);
   background: var(--arena);
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 [hidden] { display: none !important; }
+img { max-width: 100%; }
+a { color: var(--laguna); }
+:focus-visible { outline: 3px solid var(--sol); outline-offset: 2px; }
 
-/* Barra superior */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.saltar { position: absolute; left: 12px; top: -48px; background: var(--blanco); padding: 8px 12px; border-radius: 6px; z-index: 50; }
+.saltar:focus { top: 12px; }
+
+/* Lo que se ve solo en el sitio público o solo en el panel del personal */
+body[data-modo="panel"] .solo-sitio { display: none !important; }
+body[data-modo="sitio"] .solo-panel { display: none !important; }
+
+/* =====================================================================
+   Barra superior
+   ===================================================================== */
 .barra {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 24px;
+  gap: 16px;
+  padding: 10px max(16px, calc((100% - var(--ancho)) / 2));
   background: var(--oceano);
   color: var(--blanco);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .08);
 }
-.marca { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; font-weight: 700; }
-.marca small { font-weight: 400; font-size: .85rem; opacity: .8; }
-.sesion { display: flex; align-items: center; gap: 10px; font-size: .95rem; }
+.marca { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; margin-right: auto; }
+.marca img { background: var(--arena); border-radius: 50%; padding: 3px; }
+.marca-texto { display: flex; flex-direction: column; line-height: 1.1; }
+.marca-texto strong { font-family: var(--f-titulo); font-size: 1.45rem; letter-spacing: .02em; }
+.marca-texto small { font-size: .78rem; opacity: .8; letter-spacing: .04em; }
 
-main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+.menu { display: flex; align-items: center; gap: 4px; }
+.menu a { color: var(--blanco); text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: .95rem; }
+.menu a:hover { background: rgba(255, 255, 255, .1); }
+.menu a.boton { margin-left: 6px; background: var(--sol); color: var(--oceano-noche); }
+.menu a.boton:hover { filter: brightness(1.05); }
 
-/* Tarjetas */
+.sesion { display: flex; align-items: center; gap: 10px; font-size: .92rem; }
+.btn-menu { display: none; background: none; border: 1px solid rgba(255, 255, 255, .5); color: var(--blanco); border-radius: 8px; font-size: 1.2rem; padding: 4px 10px; cursor: pointer; }
+
+/* =====================================================================
+   Portada
+   ===================================================================== */
+.portada {
+  position: relative;
+  min-height: min(82vh, 720px);
+  display: flex;
+  align-items: center;
+  padding: 72px max(16px, calc((100% - var(--ancho)) / 2));
+  color: var(--blanco);
+  /* Capas: velo para leer el texto, foto real (si se agrega) e ilustración de respaldo */
+  background-image:
+    linear-gradient(100deg, rgba(8, 36, 54, .82) 0%, rgba(8, 36, 54, .55) 45%, rgba(8, 36, 54, .05) 80%),
+    url("/img/playa-samara.jpg"),
+    url("/img/playa-samara.svg");
+  background-size: cover, cover, cover;
+  background-position: center, center, center;
+  background-color: var(--oceano);
+}
+.portada-contenido { max-width: 620px; display: flex; flex-direction: column; gap: 18px; }
+.antetitulo { margin: 0; font-size: .82rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--laguna); }
+.portada .antetitulo { color: var(--sol); }
+.portada h1 { margin: 0; font-family: var(--f-titulo); font-weight: 600; font-size: clamp(2.1rem, 5vw, 3.4rem); line-height: 1.08; text-wrap: balance; }
+.portada-texto { margin: 0; font-size: 1.12rem; max-width: 54ch; opacity: .95; }
+.portada-acciones { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.datos-rapidos { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 28px; }
+.datos-rapidos li { display: flex; flex-direction: column; }
+.datos-rapidos strong { font-family: var(--f-titulo); font-size: 1.9rem; line-height: 1; color: var(--sol); }
+.datos-rapidos span { font-size: .88rem; opacity: .85; }
+
+/* =====================================================================
+   Bloques de la página de inicio
+   ===================================================================== */
+main { max-width: var(--ancho); margin: 0 auto; padding: 24px 16px 8px; }
+.bloque { padding: 56px 0 24px; display: flex; flex-direction: column; gap: 28px; }
+.bloque-encabezado { display: flex; flex-direction: column; gap: 8px; max-width: 720px; }
+.bloque-encabezado h2 { margin: 0; font-family: var(--f-titulo); font-weight: 600; font-size: clamp(1.6rem, 3.2vw, 2.2rem); line-height: 1.15; color: var(--oceano); text-wrap: balance; }
+.bloque-encabezado p { margin: 0; color: var(--gris); }
+.nota.centrada { text-align: center; }
+
+/* Ubicación */
+.ubicacion { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.ubicacion-texto { display: flex; flex-direction: column; gap: 14px; font-size: 1.04rem; }
+.ubicacion-texto p { margin: 0; max-width: 62ch; }
+.enlace-flecha { font-weight: 600; text-decoration: none; }
+.enlace-flecha::after { content: " →"; }
+.enlace-flecha:hover { text-decoration: underline; }
+.distancias { background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio); padding: 20px 22px; }
+.distancias h3 { margin: 0 0 12px; font-size: 1.05rem; color: var(--oceano); }
+.distancias h3 small { font-weight: 400; color: var(--gris); font-size: .8rem; }
+.distancias dl { margin: 0 0 12px; display: flex; flex-direction: column; }
+.distancias dl div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--borde); }
+.distancias dt { color: var(--texto); }
+.distancias dd { margin: 0; font-weight: 600; color: var(--oceano); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.distancias .nota { margin: 0; }
+
+/* Tipos de habitación */
+.tipos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.tipo {
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.tipo-cabecera { height: 120px; background: linear-gradient(160deg, var(--laguna) 0%, var(--oceano) 100%); position: relative; }
+.tipo-cabecera.superior { background: linear-gradient(160deg, #3f8c98 0%, var(--laguna) 100%); }
+.tipo-cabecera.suite { background: linear-gradient(160deg, var(--sol) 0%, var(--sol-oscuro) 100%); }
+.tipo-cabecera svg { position: absolute; inset: auto 0 0 0; width: 100%; height: 46px; }
+.tipo-cuerpo { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.tipo h3 { margin: 0; font-family: var(--f-titulo); font-size: 1.45rem; text-transform: capitalize; color: var(--oceano); }
+.tipo p { margin: 0; color: var(--gris); }
+.tipo > h3, .tipo > p { padding: 0 20px; }
+.tipo > h3 { padding-top: 18px; }
+.tipo > p { padding-bottom: 18px; }
+.tipo-datos { display: flex; gap: 14px; flex-wrap: wrap; font-size: .9rem; color: var(--gris); }
+.tipo-precio { margin-top: auto; padding-top: 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tipo-precio span { color: var(--gris); font-size: .9rem; }
+.tipo-precio strong { font-size: 1.5rem; color: var(--texto); }
+
+/* Amenidades */
+.amenidades { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+.amenidades li { background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio); padding: 20px; display: flex; flex-direction: column; gap: 6px; }
+.amenidades svg { width: 34px; height: 34px; fill: none; stroke: var(--laguna); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 4px; }
+.amenidades h3 { margin: 0; font-size: 1.04rem; color: var(--oceano); }
+.amenidades p { margin: 0; color: var(--gris); font-size: .95rem; }
+
+/* Reseñas */
+.calificacion { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--texto) !important; }
+.estrellas { color: var(--sol-oscuro); letter-spacing: .1em; }
+.resenas { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.resena { margin: 0; background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio); padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+.resena blockquote { margin: 0; font-family: var(--f-titulo); font-size: 1.12rem; line-height: 1.45; }
+.resena figcaption { margin-top: auto; font-size: .9rem; color: var(--gris); }
+
+/* Reservar */
+.bloque-reservar { padding-top: 56px; }
+body[data-modo="panel"] .bloque-reservar { padding-top: 8px; gap: 0; }
+
+/* Suscripción por correo */
+.novedades {
+  margin: 48px 0 40px;
+  padding: 32px clamp(20px, 4vw, 44px);
+  border-radius: 14px;
+  background: var(--oceano);
+  color: var(--blanco);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 12px 32px;
+  align-items: center;
+}
+.novedades h2 { margin: 0 0 6px; font-family: var(--f-titulo); font-size: 1.7rem; }
+.novedades-texto p { margin: 0; opacity: .88; }
+.novedades-form { display: flex; flex-wrap: wrap; gap: 10px; }
+.novedades-form input { flex: 1 1 220px; min-width: 0; padding: 12px 14px; font-size: 1rem; border: none; }
+.novedades-form .boton { background: var(--sol); color: var(--oceano-noche); padding: 12px 20px; }
+.novedades-mensaje { flex-basis: 100%; margin: 0; min-height: 1.4em; font-size: .95rem; }
+.novedades-mensaje.error { color: #FFD1C7; }
+.novedades-mensaje.exito { color: #BFF0E4; }
+.novedades-legal { grid-column: 2; margin: 0; font-size: .82rem; opacity: .7; }
+
+/* =====================================================================
+   Pie de página y contacto
+   ===================================================================== */
+.pie { background: var(--oceano-noche); color: #D5E2EA; padding: 44px max(16px, calc((100% - var(--ancho)) / 2)) 22px; font-size: .95rem; }
+.pie-columnas { display: grid; grid-template-columns: minmax(0, 1.2fr) repeat(3, minmax(0, 1fr)); gap: 28px; padding-bottom: 28px; border-bottom: 1px solid rgba(255, 255, 255, .12); margin-bottom: 18px; }
+.pie h3 { margin: 0 0 10px; font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; color: var(--sol); }
+.pie ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pie p { margin: 0; }
+.pie a { color: #D5E2EA; }
+.pie-marca { display: flex; gap: 14px; align-items: flex-start; }
+.pie-marca img { background: var(--arena); border-radius: 50%; padding: 4px; flex: none; }
+.dato { color: var(--blanco); font-weight: 600; user-select: all; }
+.pie-legal { text-align: center; font-size: .82rem; opacity: .75; }
+.pie-legal code { color: var(--blanco); }
+body[data-modo="panel"] .pie { padding-top: 18px; }
+
+/* =====================================================================
+   Componentes de la reserva y del panel del personal (sin cambios de uso)
+   ===================================================================== */
 .tarjeta {
   background: var(--blanco);
   border: 1px solid var(--borde);
@@ -49,12 +226,10 @@ main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
   padding: 20px 24px;
   margin-bottom: 20px;
 }
-h1, h2 { margin: 0 0 14px; color: var(--oceano); }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.2rem; }
+.tarjeta h1, .tarjeta h2 { margin: 0 0 14px; color: var(--oceano); }
+.tarjeta h2 { font-size: 1.2rem; }
 .encabezado { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
-/* Formularios */
 .fila { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 16px; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--gris); }
 input, select {
@@ -68,8 +243,8 @@ input, select {
 }
 input:focus, select:focus { outline: 2px solid var(--laguna); outline-offset: 1px; }
 
-/* Botones */
 .boton {
+  display: inline-block;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -78,11 +253,15 @@ input:focus, select:focus { outline: 2px solid var(--laguna); outline-offset: 1p
   padding: 9px 16px;
   background: var(--laguna);
   color: var(--blanco);
+  text-decoration: none;
 }
 .boton:hover { filter: brightness(1.08); }
 .boton.claro { background: transparent; color: inherit; border: 1px solid currentColor; }
 .boton.peligro { background: var(--coral); }
 .boton.pequeno { padding: 5px 10px; font-size: .85rem; }
+.boton.grande { padding: 13px 22px; font-size: 1.02rem; }
+.portada .boton.grande:not(.fantasma) { background: var(--sol); color: var(--oceano-noche); }
+.boton.fantasma { background: rgba(255, 255, 255, .08); color: var(--blanco); border: 1px solid rgba(255, 255, 255, .7); }
 .boton:disabled { opacity: .5; cursor: wait; }
 .enlace { background: none; border: none; color: var(--laguna); cursor: pointer; font: inherit; text-decoration: underline; padding: 0; margin-right: auto; }
 
@@ -120,10 +299,12 @@ td code { font-size: .85rem; }
 .aviso { border-radius: var(--radio); padding: 12px 16px; margin-bottom: 16px; font-weight: 500; }
 .aviso.exito { background: #DDF0EC; color: #145C58; }
 .aviso.error { background: #F6DCD6; color: #8E3524; }
+main > .aviso { position: sticky; top: 76px; z-index: 15; box-shadow: 0 4px 14px rgba(11, 60, 93, .12); }
 
 /* Diálogos */
 dialog { border: none; border-radius: var(--radio); padding: 24px; width: min(420px, 92vw); }
 dialog::backdrop { background: rgba(11, 60, 93, .45); }
+dialog h2 { margin: 0; color: var(--oceano); }
 dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog input { width: 100%; }
 .acciones { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px; }
@@ -139,15 +320,42 @@ dialog input { width: 100%; }
 .clave { word-break: break-all; color: var(--texto); font-size: .85rem; }
 .botones-fila { display: flex; gap: 6px; flex-wrap: wrap; }
 
-.pie { text-align: center; color: var(--gris); font-size: .85rem; padding: 16px; }
-
-@media (max-width: 600px) {
-  .barra { padding: 12px 16px; }
-  .tarjeta { padding: 16px; }
-  input, select { min-width: 0; width: 100%; }
-  .fila label { flex: 1 1 140px; }
-}
-
 /* La lista de 46 habitaciones se desplaza dentro de su tarjeta */
 #lista-habitaciones .tabla-contenedor { max-height: 440px; overflow-y: auto; }
 #lista-habitaciones th { position: sticky; top: 0; }
+
+/* =====================================================================
+   Pantallas angostas
+   ===================================================================== */
+@media (max-width: 920px) {
+  .btn-menu { display: block; }
+  .menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 16px 16px;
+    background: var(--oceano);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, .2);
+  }
+  .menu.abierto { display: flex; }
+  .menu a.boton { margin: 6px 0 0; text-align: center; }
+  .ubicacion, .novedades { grid-template-columns: 1fr; }
+  .novedades-legal { grid-column: 1; }
+  .pie-columnas { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 600px) {
+  .barra { gap: 10px; }
+  .marca-texto small { display: none; }
+  .sesion #usuario-actual { display: none; }
+  .portada { padding-block: 56px; min-height: 0; }
+  .datos-rapidos { gap: 20px; }
+  .tarjeta { padding: 16px; }
+  input, select { min-width: 0; width: 100%; }
+  .fila label { flex: 1 1 140px; }
+  .pie-columnas { grid-template-columns: 1fr; }
+}

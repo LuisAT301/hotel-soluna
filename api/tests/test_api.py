@@ -177,7 +177,7 @@ def test_bitacora_registra_quien_hizo_que(cliente_http):
 # ------------------------------------------------------------- base de datos
 def test_api_no_puede_borrar_ni_alterar(admin_db):
     """El usuario de la API (app_hotel) no puede borrar reservas ni tocar la bitácora."""
-    conexion = psycopg.connect(host=os.environ["DB_HOST"], port=os.environ["DB_PORT"], dbname="hotel",
+    conexion = psycopg.connect(host=os.environ["DB_HOST"], port=os.environ["DB_PORT"], dbname=os.environ.get("DB_NAME", "hotel"),
                                user="app_hotel", password=os.environ["DB_PASSWORD"], autocommit=True)
     with conexion:
         for sql in ("DELETE FROM reservas", "DELETE FROM bitacora", "UPDATE bitacora SET accion = 'x'",

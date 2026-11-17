@@ -3,18 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hotel Soluna</title>
+  <title>Hotel Soluna · Playa Sámara, Guanacaste</title>
+  <meta name="description" content="Hotel Soluna: 46 habitaciones a pasos de Playa Sámara, Guanacaste, Costa Rica. Reserve en línea.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/estilos.css">
   <script src="/app.js" defer></script>
 </head>
-<body>
+<body data-modo="sitio">
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
+
   <header class="barra">
-    <div class="marca">
-      <img src="/favicon.svg" alt="" width="28" height="28">
-      <span>Hotel Soluna</span>
-      <small>Playa Sámara</small>
-    </div>
+    <a class="marca" href="#inicio" aria-label="Hotel Soluna, ir al inicio">
+      <img src="/img/logo.svg" alt="" width="40" height="40">
+      <span class="marca-texto"><strong>Soluna</strong><small>Hotel · Playa Sámara</small></span>
+    </a>
+    <button id="btn-menu" class="btn-menu solo-sitio" type="button" aria-expanded="false" aria-controls="menu-principal">
+      <span class="sr">Abrir el menú</span><span aria-hidden="true">☰</span>
+    </button>
+    <nav id="menu-principal" class="menu solo-sitio" aria-label="Secciones">
+      <a href="#ubicacion">Ubicación</a>
+      <a href="#alojamiento">Habitaciones</a>
+      <a href="#amenidades">Amenidades</a>
+      <a href="#resenas">Reseñas</a>
+      <a href="#contacto">Contacto</a>
+      <a href="#reservar" class="boton pequeno">Reservar</a>
+    </nav>
     <div class="sesion">
       <span id="usuario-actual"></span>
       <button id="btn-entrar" class="boton claro" type="button">Iniciar sesión</button>
@@ -22,63 +35,268 @@
     </div>
   </header>
 
-  <main>
+  <!-- ============================================================ portada -->
+  <section id="inicio" class="portada solo-sitio">
+    <div class="portada-contenido">
+      <p class="antetitulo">Playa Sámara · Guanacaste · Costa Rica</p>
+      <h1>Despierte frente a la bahía más tranquila del Pacífico</h1>
+      <p class="portada-texto">Hotel Soluna está a 150 metros de la arena, en una bahía protegida por un arrecife
+        que mantiene el mar en calma. Ideal para nadar, aprender a surfear o ver el atardecer detrás de la Isla Chora.</p>
+      <div class="portada-acciones">
+        <a class="boton grande" href="#reservar">Ver disponibilidad y reservar</a>
+        <a class="boton grande fantasma" href="#amenidades">Conocer el hotel</a>
+      </div>
+      <ul class="datos-rapidos">
+        <li><strong>150 m</strong><span>de la playa</span></li>
+        <li><strong>46</strong><span>habitaciones</span></li>
+        <li><strong>24 h</strong><span>de recepción</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <main id="contenido">
     <div id="aviso" class="aviso" role="status" hidden></div>
 
-    <section id="sec-buscar" class="tarjeta">
-      <h1>Disponibilidad</h1>
-      <form id="form-buscar" class="fila">
-        <label>Entrada <input type="date" name="entrada" required></label>
-        <label>Salida <input type="date" name="salida" required></label>
-        <label>Personas <input type="number" name="personas" min="1" max="10" value="2" required></label>
-        <button class="boton" type="submit">Buscar</button>
+    <!-- ============================================================ ubicación -->
+    <section id="ubicacion" class="bloque solo-sitio">
+      <div class="bloque-encabezado">
+        <p class="antetitulo">Dónde estamos</p>
+        <h2>En el corazón de Playa Sámara</h2>
+      </div>
+      <div class="ubicacion">
+        <div class="ubicacion-texto">
+          <p>Sámara es un pueblo costero de la península de Nicoya, en Guanacaste. Su bahía en forma de media luna
+            está resguardada por un arrecife, así que las olas llegan suaves a la orilla: el mar es apto para
+            familias, kayak y primeras clases de surf.</p>
+          <p>Desde el hotel se llega caminando a la playa, a los restaurantes del pueblo y a la plaza. La temporada
+            seca va de diciembre a abril; de mayo a noviembre llueve por las tardes y el paisaje se vuelve verde.</p>
+          <a class="enlace-flecha" href="https://www.openstreetmap.org/?mlat=9.8819&amp;mlon=-85.5281#map=15/9.8819/-85.5281" target="_blank" rel="noopener">Ver Playa Sámara en el mapa</a>
+        </div>
+        <div class="distancias">
+          <h3>Cómo llegar <small>(tiempos aproximados en auto)</small></h3>
+          <dl>
+            <div><dt>Aeropuerto de Liberia (LIR)</dt><dd>2 h</dd></div>
+            <div><dt>San José</dt><dd>4 h</dd></div>
+            <div><dt>Nicoya</dt><dd>40 min</dd></div>
+            <div><dt>Playa Carrillo</dt><dd>15 min</dd></div>
+            <div><dt>Refugio de Ostional (tortugas)</dt><dd>1 h 30 min</dd></div>
+          </dl>
+          <p class="nota">Coordinamos el traslado desde el aeropuerto con su reserva.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ habitaciones -->
+    <section id="alojamiento" class="bloque solo-sitio">
+      <div class="bloque-encabezado">
+        <p class="antetitulo">Alojamiento</p>
+        <h2>Tres tipos de habitación, todas con aire acondicionado y baño privado</h2>
+      </div>
+      <div id="tipos-habitacion" class="tipos">
+        <!-- Se llena con /api/tipos-habitacion; esto es lo que se ve si la API no responde -->
+        <article class="tipo"><h3>Estándar</h3><p>Cama queen, vista al jardín.</p></article>
+        <article class="tipo"><h3>Superior</h3><p>Cama king y sofá cama, balcón con vista parcial al mar.</p></article>
+        <article class="tipo"><h3>Suite</h3><p>Dos ambientes, terraza frente al mar.</p></article>
+      </div>
+      <p class="nota centrada">Precios por noche en dólares, sin impuestos. Temporada alta: diciembre a abril.</p>
+    </section>
+
+    <!-- ============================================================ amenidades -->
+    <section id="amenidades" class="bloque solo-sitio">
+      <div class="bloque-encabezado">
+        <p class="antetitulo">Amenidades</p>
+        <h2>Todo lo necesario para descansar, y la playa a un paso</h2>
+      </div>
+      <ul class="amenidades">
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0M3 21c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0M8 14V5a2 2 0 0 1 4 0M16 14V5a2 2 0 0 0-4 0M8 8h8M8 11h8"/></svg>
+          <h3>Piscina con vista al mar</h3><p>Abierta de 7:00 a 21:00, con toallas y tumbonas.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8a2 2 0 0 1-4 0V3M5 11v10M17 21V3c-2.5 0-4 2.5-4 6v4h4"/></svg>
+          <h3>Restaurante Mareas</h3><p>Cocina costarricense y pescado del día. Desayuno incluido.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20c4-8 8-12 16-16M4 20c1-4 4-8 8-10M8 20c3-3 6-7 8-12"/></svg>
+          <h3>Tours y deportes</h3><p>Clases de surf, kayak a la Isla Chora, snorkel y caminatas.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg>
+          <h3>Wifi en todo el hotel</h3><p>Incluido en todas las habitaciones y áreas comunes.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 16V8a2 2 0 0 1 2-2h11l5 5v5h-2M3 16h2M9 16h6"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>
+          <h3>Traslado al aeropuerto</h3><p>Desde Liberia o hasta San José, con reserva previa.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v6M6 10l6 3 6-3M8 21l4-8 4 8"/></svg>
+          <h3>Yoga al amanecer</h3><p>Sesiones gratuitas en la terraza, de martes a domingo.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V5a2 2 0 0 1 2-2h5a4 4 0 0 1 0 8H5"/></svg>
+          <h3>Estacionamiento privado</h3><p>Sin costo y vigilado para huéspedes.</p>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <h3>Recepción 24 horas</h3><p>Atención en español e inglés, día y noche.</p>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ reseñas -->
+    <section id="resenas" class="bloque solo-sitio">
+      <div class="bloque-encabezado">
+        <p class="antetitulo">Reseñas</p>
+        <h2>Lo que dicen nuestros huéspedes</h2>
+        <p class="calificacion"><span class="estrellas" aria-hidden="true">★★★★★</span>
+          <strong>4,8 de 5</strong> en 312 opiniones</p>
+      </div>
+      <div class="resenas">
+        <figure class="resena">
+          <div class="estrellas" aria-label="5 de 5 estrellas">★★★★★</div>
+          <blockquote>La playa está a dos minutos caminando y el mar es tan tranquilo que nuestros hijos nadaron todos
+            los días. El desayuno del restaurante, excelente.</blockquote>
+          <figcaption><strong>Daniela M.</strong> · Heredia, Costa Rica · marzo 2026</figcaption>
+        </figure>
+        <figure class="resena">
+          <div class="estrellas" aria-label="5 de 5 estrellas">★★★★★</div>
+          <blockquote>Tomé mi primera clase de surf gracias a la recepción, que lo organizó todo. La suite con
+            terraza vale cada colón.</blockquote>
+          <figcaption><strong>Andrés R.</strong> · Madrid, España · enero 2026</figcaption>
+        </figure>
+        <figure class="resena">
+          <div class="estrellas" aria-label="4 de 5 estrellas">★★★★☆</div>
+          <blockquote>Habitación limpia y cómoda, personal muy amable. Reservar y pagar en línea fue rápido y la
+            factura llegó al correo enseguida.</blockquote>
+          <figcaption><strong>Laura K.</strong> · Toronto, Canadá · agosto 2026</figcaption>
+        </figure>
+      </div>
+      <p class="nota centrada">Reseñas de demostración del prototipo académico.</p>
+    </section>
+
+    <!-- ============================================================ reservar -->
+    <section id="reservar" class="bloque bloque-reservar">
+      <div class="bloque-encabezado solo-sitio">
+        <p class="antetitulo">Reservaciones</p>
+        <h2>Reserve su estadía</h2>
+        <p>Elija las fechas para ver las habitaciones libres y el precio total. El pago se hace en línea con tarjeta
+          y la factura electrónica llega a su correo.</p>
+      </div>
+      <section id="sec-buscar" class="tarjeta">
+        <h2 class="solo-panel">Disponibilidad</h2>
+        <form id="form-buscar" class="fila">
+          <label>Entrada <input id="buscar-entrada" type="date" name="entrada" required></label>
+          <label>Salida <input id="buscar-salida" type="date" name="salida" required></label>
+          <label>Personas <input id="buscar-personas" type="number" name="personas" min="1" max="10" value="2" required></label>
+          <button class="boton" type="submit">Buscar</button>
+        </form>
+        <div id="resultados"></div>
+      </section>
+
+      <section id="sec-reservas" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2 id="titulo-reservas">Reservas</h2>
+          <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
+        </div>
+        <div id="lista-reservas"></div>
+      </section>
+
+      <section id="sec-habitaciones" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Habitaciones</h2>
+          <button id="btn-recargar-habitaciones" class="boton claro" type="button">Actualizar</button>
+        </div>
+        <div id="lista-habitaciones"></div>
+      </section>
+
+      <section id="sec-usuarios" class="tarjeta" hidden>
+        <h2>Cuentas del personal</h2>
+        <form id="form-usuario" class="fila">
+          <label>Nombre <input name="nombre" required minlength="2"></label>
+          <label>Correo <input name="correo" type="email" required></label>
+          <label>Contraseña <input name="contrasena" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label>Rol
+            <select name="rol">
+              <option value="recepcionista">Recepcionista</option>
+              <option value="limpieza">Limpieza</option>
+              <option value="mantenimiento">Mantenimiento</option>
+              <option value="gerente">Gerente</option>
+            </select>
+          </label>
+          <button class="boton" type="submit">Crear cuenta</button>
+        </form>
+        <div id="lista-usuarios"></div>
+      </section>
+
+      <section id="sec-bitacora" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Bitácora de auditoría</h2>
+          <button id="btn-recargar-bitacora" class="boton claro" type="button">Actualizar</button>
+        </div>
+        <div id="lista-bitacora"></div>
+      </section>
+
+      <section id="sec-suscriptores" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Correos suscritos</h2>
+          <button id="btn-recargar-suscriptores" class="boton claro" type="button">Actualizar</button>
+        </div>
+        <p class="nota">Personas que pidieron ofertas y novedades desde la página de inicio.
+          <span id="total-suscriptores"></span></p>
+        <div id="lista-suscriptores"></div>
+      </section>
+    </section>
+
+    <!-- ============================================================ novedades -->
+    <section id="novedades" class="novedades solo-sitio">
+      <div class="novedades-texto">
+        <h2>Ofertas y novedades en su correo</h2>
+        <p>Una vez al mes: tarifas especiales de temporada, eventos en Sámara y noticias del hotel.</p>
+      </div>
+      <form id="form-suscripcion" class="novedades-form" novalidate>
+        <label for="suscripcion-correo" class="sr">Correo electrónico</label>
+        <input id="suscripcion-correo" name="correo" type="email" required autocomplete="email"
+               placeholder="su.correo@ejemplo.com">
+        <button id="btn-suscribir" class="boton" type="submit">Suscribirme</button>
+        <p id="msg-suscripcion" class="novedades-mensaje" role="status" aria-live="polite"></p>
       </form>
-      <div id="resultados"></div>
-    </section>
-
-    <section id="sec-reservas" class="tarjeta" hidden>
-      <div class="encabezado">
-        <h2 id="titulo-reservas">Reservas</h2>
-        <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
-      </div>
-      <div id="lista-reservas"></div>
-    </section>
-
-    <section id="sec-habitaciones" class="tarjeta" hidden>
-      <div class="encabezado">
-        <h2>Habitaciones</h2>
-        <button id="btn-recargar-habitaciones" class="boton claro" type="button">Actualizar</button>
-      </div>
-      <div id="lista-habitaciones"></div>
-    </section>
-
-    <section id="sec-usuarios" class="tarjeta" hidden>
-      <h2>Cuentas del personal</h2>
-      <form id="form-usuario" class="fila">
-        <label>Nombre <input name="nombre" required minlength="2"></label>
-        <label>Correo <input name="correo" type="email" required></label>
-        <label>Contraseña <input name="contrasena" type="password" required minlength="8" autocomplete="new-password"></label>
-        <label>Rol
-          <select name="rol">
-            <option value="recepcionista">Recepcionista</option>
-            <option value="limpieza">Limpieza</option>
-            <option value="mantenimiento">Mantenimiento</option>
-            <option value="gerente">Gerente</option>
-          </select>
-        </label>
-        <button class="boton" type="submit">Crear cuenta</button>
-      </form>
-      <div id="lista-usuarios"></div>
-    </section>
-
-    <section id="sec-bitacora" class="tarjeta" hidden>
-      <div class="encabezado">
-        <h2>Bitácora de auditoría</h2>
-        <button id="btn-recargar-bitacora" class="boton claro" type="button">Actualizar</button>
-      </div>
-      <div id="lista-bitacora"></div>
+      <p class="novedades-legal">Solo usamos su correo para estas comunicaciones. Puede darse de baja cuando quiera.</p>
     </section>
   </main>
+
+  <!-- ============================================================ contacto -->
+  <footer id="contacto" class="pie">
+    <div class="pie-columnas solo-sitio">
+      <div class="pie-marca">
+        <img src="/img/logo.svg" alt="" width="56" height="56">
+        <p><strong>Hotel Soluna</strong><br>Playa Sámara, Nicoya<br>Guanacaste, Costa Rica</p>
+      </div>
+      <div>
+        <h3>Contacto</h3>
+        <ul>
+          <li>Teléfono: <span class="dato">+506 2656-0000</span></li>
+          <li>WhatsApp: <span class="dato">+506 8800-0000</span></li>
+          <li>Correo: <span class="dato">reservas@soluna.test</span></li>
+          <li>Recepción abierta las 24 horas</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Dirección</h3>
+        <p>150 m al sur de la plaza de deportes,<br>frente a la entrada principal de la playa,<br>Sámara, Nicoya, Guanacaste 50205</p>
+      </div>
+      <div>
+        <h3>El hotel</h3>
+        <ul>
+          <li><a href="#alojamiento">Habitaciones</a></li>
+          <li><a href="#amenidades">Amenidades</a></li>
+          <li><a href="#resenas">Reseñas</a></li>
+          <li><a href="#reservar">Reservar</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="pie-legal">Prototipo académico (ULACIT, IIICO 2026). Hotel y datos de contacto ficticios.
+      Respondió la réplica <code id="replica">…</code></p>
+  </footer>
 
   <dialog id="dlg-entrar">
     <form id="form-entrar" method="dialog">
@@ -152,9 +370,5 @@
       </div>
     </form>
   </dialog>
-
-  <footer class="pie">
-    Prototipo académico (ULACIT) · Respondió la réplica <code id="replica">…</code>
-  </footer>
 </body>
 </html>

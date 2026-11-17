@@ -23,7 +23,7 @@ nodo local de contingencia en el hotel.
 | Componente | Tecnología |
 |---|---|
 | API | Python 3.13 + FastAPI |
-| Base de datos | PostgreSQL 17 |
+| Base de datos | PostgreSQL 17, en Docker o en Supabase |
 | Acceso a datos | SQLAlchemy 2 |
 | Contraseñas | Argon2id |
 | Sesiones | JWT de 30 minutos |
@@ -119,14 +119,30 @@ En la interfaz web, use **Iniciar sesión**. En `/api/docs`, use el botón **Aut
 
 | Rol | Secciones |
 |---|---|
-| Público | Disponibilidad (para reservar debe iniciar sesión o crear una cuenta) |
-| Cliente | Disponibilidad, Mis reservas (paga en línea y consulta su factura) |
+| Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
+| Cliente | La misma página de inicio, más Mis reservas (paga en línea y consulta su factura) |
 | Recepcionista | Disponibilidad, Reservas, Habitaciones (puede reservar a nombre de un huésped) |
 | Limpieza | Habitaciones (cambia el estado de limpieza) |
 | Mantenimiento | Habitaciones (solo lectura) |
-| Gerente | Todo lo anterior, más Cuentas del personal y Bitácora |
+| Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
 
+El personal entra directo a su panel de trabajo, sin la página de inicio.
 El pie de página muestra qué réplica de la API respondió la última solicitud.
+
+### Página de inicio
+
+- **Foto de fondo:** hoy es una ilustración de Playa Sámara (`web/img/playa-samara.svg`). Para usar una foto
+  real, guárdela como `web/img/playa-samara.jpg` (ancho recomendado: 1920 px) y recargue la página: reemplaza
+  a la ilustración sin tocar el código. Use una foto propia o con licencia que permita su uso.
+- **Logo:** `web/img/logo.svg`, un círculo mitad sol y mitad luna sobre el mar. También es el ícono de la pestaña.
+- **Suscripción por correo:** el campo de "Ofertas y novedades" guarda el correo en la tabla `suscriptores`
+  y envía una bienvenida. Gerencia ve la lista en su panel; el mismo correo no se repite y la respuesta no revela
+  si ya estaba suscrito. Nginx limita la ruta a 5 intentos por minuto por IP.
+- **Envío real de correos:** hoy todo lo captura Mailpit. Para usar un servicio de envío (Brevo, SendGrid,
+  Amazon SES, Resend u otro con SMTP), basta con definir en el servicio `api` de `docker-compose.yml`:
+  `SMTP_HOST`, `SMTP_PORT` (normalmente 587), `SMTP_USUARIO`, `SMTP_PASSWORD_FILE` (como secreto de Docker),
+  `SMTP_TLS: "si"` y `CORREO_REMITENTE` con un dominio verificado en el servicio.
+- **Datos ficticios:** el hotel, el teléfono, la dirección y las reseñas son de demostración.
 
 ## Demostraciones del bloque 2
 
@@ -280,6 +296,102 @@ Detalles de seguridad:
 - Solo escucha en el propio equipo (`127.0.0.1`).
 - En producción no existiría.
 
+## Base de datos en Supabase (opcional)
+
+En lugar del contenedor `db`, la base puede vivir en Supabase: un servicio administrado de PostgreSQL,
+separado del resto del sistema, con panel de administración, conexiones cifradas y respaldos a cargo
+del proveedor. La API, Nginx, el simulador y Mailpit siguen corriendo en Docker.
+
+### Qué cambia respecto de la base en Docker
+
+- **Esquema `hotel`:** las tablas no están en `public`. Supabase publica `public` como API REST abierta;
+  en `hotel`, los datos de huéspedes y pagos no quedan expuestos.
+- **Migraciones:** el esquema completo está en `supabase/migrations/`. Si cambia el esquema, hay que agregar
+  una migración nueva ahí y actualizar también `db/init`.
+- **Conexión:** la API entra por el *pooler* de Supabase en modo sesión (funciona con IPv4) y exige TLS.
+- **Conexiones:** cada réplica abre como máximo 2 (6 por computadora), porque el plan gratuito admite pocas.
+- **Usuarios:** `app_hotel` y `respaldo` tienen los mismos privilegios mínimos que en Docker.
+
+### Estado del proyecto de Supabase del equipo
+
+El esquema ya está aplicado en el proyecto del equipo: las dos migraciones de `supabase/migrations/`
+aparecen en *Database > Migrations* del panel, con las 46 habitaciones, las tarifas y los usuarios de la
+base (`app_hotel` y `respaldo`) creados, pero todavía sin inicio de sesión. Los nombres de los archivos
+coinciden con las versiones que registró Supabase, así que la integración con GitHub no intentará
+aplicarlas otra vez al fusionar en `main`.
+
+Todo el equipo comparte esa base, por eso la contraseña del usuario de la API es una sola: la genera la
+primera persona y los demás usan la misma.
+
+### Primera persona del equipo (una sola vez)
+
+1. **Crear el `.env` en modo Supabase.** Ejecute el script y elija la opción **2**:
+
+   ```bash
+   sh crear-env.sh               # en Windows: powershell -ExecutionPolicy Bypass -File .\crear-env.ps1
+   ```
+
+   Le pedirá la cadena de conexión: en el panel de Supabase pulse **Connect**, elija **Session pooler**
+   y cópiela. No hace falta poner la contraseña. Cuando pregunte por una contraseña compartida, presione Enter.
+
+2. **Activar los usuarios de la base.** El script crea `activar-roles-supabase.sql` con las contraseñas del
+   `.env`. Copie su contenido en el *SQL Editor* de Supabase y pulse **Run**. Ese archivo tiene contraseñas:
+   Git lo ignora y no debe compartirse.
+
+3. **Compartir la contraseña de la API** (el valor de `DB_APP_PASSWORD` de su `.env`) con el equipo por un
+   medio privado, nunca por el repositorio ni por un grupo abierto.
+
+4. **Levantar el sistema y crear las cuentas de demostración.** El primer comando apaga lo que hubiera con la
+   base local; `--force-recreate` obliga a crear contenedores nuevos, que tomen la contraseña del `.env` actual
+   (Docker no recrea un contenedor solo porque cambió el valor de un secreto):
+
+   ```bash
+   docker compose --profile solo-local down
+   docker compose up --build -d --force-recreate
+   docker compose exec api python -m app.seed
+   ```
+
+   El `.env` ya le indica a Docker que use `docker-compose.supabase.yml`, así que el contenedor `db` no se enciende.
+
+5. **Comprobar:** `curl -sk https://localhost/api/salud` debe responder `"base_de_datos": "ok"`.
+
+### Los demás integrantes
+
+1. Ejecute `crear-env`, elija la opción **2**, pegue la misma cadena de conexión y, cuando lo pida, la
+   contraseña de la API que le compartieron. No se crea ningún archivo SQL: los usuarios ya están activos.
+2. `docker compose --profile solo-local down` y luego `docker compose up --build -d --force-recreate`. No hace
+   falta crear las cuentas de demostración otra vez: ya están en la base compartida (contraseña `SolunaDemo2026`).
+
+Si la primera persona vuelve a ejecutar `crear-env` sin pegar la contraseña compartida, se genera una nueva:
+habría que repetir el paso 2 y volver a compartirla. Para volver a la base en Docker, ejecute `crear-env` y
+elija la opción **1**.
+
+### Si la API no enciende con Supabase ("unhealthy")
+
+Casi siempre es la contraseña: la que tiene la API no coincide con la de `app_hotel` en Supabase. Tras varios
+intentos fallidos, Supabase además bloquea nuevas conexiones por unos minutos.
+
+1. Apague todo: `docker compose --profile solo-local down`.
+2. Genere una contraseña nueva en el `.env`, guarde el SQL en `activar-roles-supabase.sql` y cópielo (Mac):
+
+   ```bash
+   NUEVA=$(od -An -tx1 -N24 /dev/urandom | tr -dc '0-9a-f'); sed -i '' "s/^DB_APP_PASSWORD=.*/DB_APP_PASSWORD=$NUEVA/" .env; printf "ALTER ROLE app_hotel WITH LOGIN PASSWORD '%s';\n" "$NUEVA" > activar-roles-supabase.sql; pbcopy < activar-roles-supabase.sql; unset NUEVA; echo "Listo: SQL copiado y guardado en activar-roles-supabase.sql"
+   ```
+
+3. En el *SQL Editor* de Supabase, pegue (debe empezar con `ALTER ROLE app_hotel`) y pulse **Run**.
+4. Espere un minuto y encienda con contenedores nuevos: `docker compose up -d --force-recreate`.
+
+Nunca pegue la contraseña en un chat, correo o mensaje. Si ocurre, cámbiela con estos mismos pasos y
+compártala de nuevo con el equipo por un medio privado.
+
+### Límites del plan gratuito
+
+- Supabase pausa el proyecto tras una semana sin uso; se reactiva desde el panel.
+- El plan admite pocas conexiones simultáneas. Cada computadora abre como máximo 6; si varias encienden el
+  sistema a la vez y la API registra un error de conexión del *pooler*, apague el sistema en las que no se usen.
+- Los respaldos automáticos y la restauración a un punto en el tiempo dependen del plan de pago, por eso
+  se mantiene el respaldo propio del bloque 4.
+
 ## API (bloque 1)
 
 | Método | Ruta | Quién puede usarla |
@@ -298,6 +410,9 @@ Detalles de seguridad:
 | POST | `/api/reservas/{codigo}/pago` | Dueño de la reserva, recepcionista, gerente *(bloque 3)* |
 | GET | `/api/reservas/{codigo}/factura` | Dueño de la reserva, recepcionista, gerente *(bloque 3)* |
 | POST | `/api/integraciones/ota/reservas` | Solo la OTA, con un aviso firmado *(bloque 3)* |
+| GET | `/api/tipos-habitacion` | Público: tipos de habitación con su precio más bajo, para la página de inicio |
+| POST | `/api/suscripciones` | Público: guarda un correo para ofertas y novedades (5 por minuto por IP) |
+| GET | `/api/suscripciones` | Gerente |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
@@ -345,7 +460,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 43 pruebas automáticas. Cubren:
+`api/tests` contiene 48 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -361,6 +476,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - Reembolso al cancelar una reserva pagada.
   - Avisos de la OTA: firma válida, firma falsa, cuerpo alterado, aviso viejo, aviso repetido y sin disponibilidad.
   - Correos de confirmación y cancelación.
+- Página de inicio: catálogo público y suscripción por correo (sin duplicados, correo inválido y acceso solo de gerencia).
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 
@@ -436,11 +552,14 @@ docker compose logs simulador        # cambie "simulador" por el servicio que fa
 ```
 hotel-soluna/
 ├── docker-compose.yml
+├── docker-compose.supabase.yml   modo Supabase: la API usa la base en la nube
 ├── .env.example          plantilla de secretos (el .env real no se sube)
 ├── crear-env.sh / .ps1   crean el .env con contraseñas al azar (Mac y Linux / Windows)
-├── db/init/              esquema, catálogo y usuarios de la base
+├── db/init/              esquema, catálogo y usuarios de la base local (Docker)
+├── supabase/migrations/  el mismo esquema para Supabase (esquema "hotel")
 ├── nginx/                imagen de Nginx: HTTPS, balanceo y cabeceras de seguridad
-├── web/                  interfaz web (HTML, CSS y JavaScript)
+├── web/                  sitio del hotel y panel del personal (HTML, CSS y JavaScript)
+│   └── img/              logo e ilustración de la playa
 ├── simulador/            pasarela de pago, Hacienda y OTA simuladas
 └── api/
     ├── Dockerfile

@@ -21,6 +21,10 @@ const ESTADOS = {
 };
 const LIMPIEZA = { sucia: 'Sucia', en_limpieza: 'En limpieza', limpia: 'Limpia', inspeccionada: 'Inspeccionada' };
 
+// El público y los clientes ven el sitio completo del hotel; el personal
+// entra directo a su panel de trabajo, sin la página de inicio.
+const PERSONAL = ['recepcionista', 'limpieza', 'mantenimiento', 'gerente'];
+
 // Qué secciones ve cada rol
 const VISTAS = {
   publico: ['buscar'],
@@ -28,7 +32,7 @@ const VISTAS = {
   recepcionista: ['buscar', 'reservas', 'habitaciones'],
   limpieza: ['habitaciones'],
   mantenimiento: ['habitaciones'],
-  gerente: ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora'],
+  gerente: ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
 };
 
 const dinero = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'USD' });
@@ -137,7 +141,8 @@ async function intentar(accion) {
 // ---------------------------------------------------------------------
 function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
-  for (const nombre of ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora']) {
+  document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
+  for (const nombre of ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
     $(`#sec-${nombre}`).hidden = !vista.includes(nombre);
   }
   $('#btn-entrar').hidden = Boolean(sesion.token);
@@ -149,6 +154,7 @@ function mostrarVista() {
   if (vista.includes('habitaciones')) intentar(cargarHabitaciones);
   if (vista.includes('usuarios')) intentar(cargarUsuarios);
   if (vista.includes('bitacora')) intentar(cargarBitacora);
+  if (vista.includes('suscriptores')) intentar(cargarSuscriptores);
   if (vista.includes('buscar') && ultimaBusqueda) intentar(() => buscar(ultimaBusqueda));
 }
 
@@ -374,6 +380,82 @@ async function cargarBitacora() {
 }
 
 // ---------------------------------------------------------------------
+// Página de inicio: tipos de habitación y suscripción por correo
+// ---------------------------------------------------------------------
+// Ola decorativa de las tarjetas de habitación (SVG fijo, sin datos de la API)
+function olaDecorativa() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 400 46');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const camino = document.createElementNS(ns, 'path');
+  camino.setAttribute('d', 'M0 24c50-16 100-16 150 0s100 16 150 0 70-14 100-6v28H0z');
+  camino.setAttribute('fill', '#FFFFFF');
+  svg.append(camino);
+  return svg;
+}
+
+async function cargarTiposHabitacion() {
+  const tipos = await api('/api/tipos-habitacion');
+  if (!tipos.length) return;
+  $('#tipos-habitacion').replaceChildren(...tipos.map((t) => el('article', { clase: 'tipo' },
+    el('div', { clase: `tipo-cabecera ${t.nombre === 'estándar' ? '' : t.nombre}` }, olaDecorativa()),
+    el('div', { clase: 'tipo-cuerpo' },
+      el('h3', {}, t.nombre),
+      el('p', {}, t.descripcion || ''),
+      el('div', { clase: 'tipo-datos' },
+        el('span', {}, `Hasta ${t.capacidad} personas`),
+        el('span', {}, `${t.habitaciones} habitaciones`)),
+      el('div', { clase: 'tipo-precio' },
+        el('span', {}, 'Desde ', el('strong', {}, dinero.format(Number(t.precio_desde))), ' por noche'),
+        el('a', { clase: 'boton pequeno', href: '#reservar', onclick: () => prepararBusqueda(t.capacidad) }, 'Ver fechas'))))));
+}
+
+// Lleva al buscador con una cantidad de personas que quepa en ese tipo de habitación
+function prepararBusqueda(capacidad) {
+  const personas = $('#buscar-personas');
+  if (Number(personas.value) > capacidad) personas.value = capacidad;
+  setTimeout(() => $('#buscar-entrada').focus({ preventScroll: true }), 400);
+}
+
+async function suscribir(formulario) {
+  const mensaje = $('#msg-suscripcion');
+  const campo = $('#suscripcion-correo');
+  mensaje.className = 'novedades-mensaje';
+  if (!campo.checkValidity()) {
+    mensaje.textContent = 'Escriba un correo válido, por ejemplo nombre@ejemplo.com.';
+    mensaje.classList.add('error');
+    campo.focus();
+    return;
+  }
+  const boton = $('#btn-suscribir');
+  boton.disabled = true;
+  try {
+    const respuesta = await api('/api/suscripciones', { metodo: 'POST', json: { correo: campo.value.trim() } });
+    mensaje.textContent = respuesta.mensaje;
+    mensaje.classList.add('exito');
+    formulario.reset();
+  } catch (error) {
+    mensaje.textContent = error.message;
+    mensaje.classList.add('error');
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// Gerencia: correos suscritos desde la página de inicio
+async function cargarSuscriptores() {
+  const lista = await api('/api/suscripciones');
+  $('#total-suscriptores').textContent = lista.length
+    ? `${lista.length} ${lista.length === 1 ? 'correo suscrito' : 'correos suscritos'}` : '';
+  $('#lista-suscriptores').replaceChildren(tabla(
+    ['Correo', 'Desde', 'Estado'],
+    lista.map((s) => [s.correo, new Date(s.creado_en).toLocaleString('es-CR'), s.activo ? 'Activo' : 'De baja']),
+    'Todavía no hay correos suscritos.'));
+}
+
+// ---------------------------------------------------------------------
 // Inicio de sesión y registro
 // ---------------------------------------------------------------------
 let modoRegistro = false;
@@ -408,6 +490,8 @@ async function enviarEntrar(formulario) {
   $('#dlg-entrar').close();
   avisar(`Bienvenido, ${token.nombre}.`);
   mostrarVista();
+  // El personal pasa a su panel: se empieza desde arriba
+  if (document.body.dataset.modo === 'panel') window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 // ---------------------------------------------------------------------
@@ -429,12 +513,33 @@ document.addEventListener('DOMContentLoaded', () => {
     intentar(() => buscar(Object.fromEntries(new FormData(formBuscar))));
   });
 
+  // Menú en pantallas angostas: se abre con el botón y se cierra al elegir una sección
+  const menu = $('#menu-principal');
+  const botonMenu = $('#btn-menu');
+  botonMenu.addEventListener('click', () => {
+    const abierto = menu.classList.toggle('abierto');
+    botonMenu.setAttribute('aria-expanded', String(abierto));
+  });
+  menu.addEventListener('click', (evento) => {
+    if (evento.target.closest('a')) {
+      menu.classList.remove('abierto');
+      botonMenu.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  $('#form-suscripcion').addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    suscribir(evento.target);
+  });
+  cargarTiposHabitacion().catch(() => { /* se queda el texto de respaldo del HTML */ });
+
   $('#btn-entrar').addEventListener('click', () => abrirEntrar());
   $('#btn-salir').addEventListener('click', () => { cerrarSesion(); avisar('Sesión cerrada.'); });
   $('#btn-cambiar-modo').addEventListener('click', () => { modoRegistro = !modoRegistro; actualizarModoEntrar(); });
   $('#btn-recargar-reservas').addEventListener('click', () => intentar(cargarReservas));
   $('#btn-recargar-habitaciones').addEventListener('click', () => intentar(cargarHabitaciones));
   $('#btn-recargar-bitacora').addEventListener('click', () => intentar(cargarBitacora));
+  $('#btn-recargar-suscriptores').addEventListener('click', () => intentar(cargarSuscriptores));
   for (const boton of document.querySelectorAll('[data-cerrar]')) {
     boton.addEventListener('click', () => boton.closest('dialog').close());
   }

@@ -23,7 +23,11 @@ def enviar(destino: str, asunto: str, cuerpo: str) -> None:
     mensaje["Message-ID"] = make_msgid(domain="soluna.test")
     mensaje.set_content(cuerpo + "\n\nHotel Soluna · Playa Sámara, Guanacaste\n")
     try:
-        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=5) as smtp:
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as smtp:
+            if config.SMTP_TLS:
+                smtp.starttls()          # cifra la conexión antes de enviar la contraseña
+            if config.SMTP_USUARIO:
+                smtp.login(config.SMTP_USUARIO, config.SMTP_PASSWORD or "")
             smtp.send_message(mensaje)
     except (OSError, smtplib.SMTPException) as error:
         registro.error("No se pudo enviar el correo '%s' a %s: %s", asunto, destino, error)

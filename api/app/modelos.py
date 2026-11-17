@@ -128,3 +128,13 @@ class Factura(Base):
     respondida_en: Mapped[datetime | None]
 
     reserva: Mapped[Reserva] = relationship(back_populates="factura")
+
+
+class Suscriptor(Base):
+    __tablename__ = "suscriptores"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    correo: Mapped[str]
+    origen: Mapped[str] = mapped_column(default="sitio_web")
+    activo: Mapped[bool] = mapped_column(default=True)
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
