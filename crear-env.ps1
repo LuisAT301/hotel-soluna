@@ -27,6 +27,7 @@ $opcion = Read-Host "Elija 1 o 2 [1]"
 
 $supabaseRef = ''
 $supabaseHost = ''
+$compartida = ''
 if ($opcion -eq '2') {
     Write-Host ""
     Write-Host "En el panel de Supabase pulse 'Connect', elija 'Session pooler' y copie la cadena"
@@ -39,6 +40,15 @@ if ($opcion -eq '2') {
         Write-Host "No se reconocio la cadena. Verifique que sea la de 'Session pooler' y vuelva a ejecutar el script."
         exit 1
     }
+    # Todo el equipo comparte la misma base, asi que la contrasena del usuario
+    # de la API tambien es una sola: la genera quien configura Supabase primero.
+    Write-Host ""
+    Write-Host "Si otro integrante ya activo los usuarios de la base en Supabase, pegue la"
+    Write-Host "contrasena de la API (DB_APP_PASSWORD) que le compartio por un medio privado."
+    $segura = Read-Host "Contrasena compartida (Enter si usted es el primero del equipo)" -AsSecureString
+    $puntero = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura)
+    $compartida = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($puntero)
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($puntero)
 }
 
 if (Test-Path .env) {
@@ -46,7 +56,7 @@ if (Test-Path .env) {
     Write-Host "Habia un .env: se guardo una copia en .env.anterior"
 }
 
-$appPass = Aleatorio
+$appPass = if ($compartida) { $compartida } else { Aleatorio }
 $respaldoPass = Aleatorio
 $fecha = Get-Date -Format 'dd/MM/yyyy HH:mm'
 $lineas = @(
@@ -68,6 +78,8 @@ if ($opcion -eq '2') {
         "SUPABASE_HOST=$supabaseHost"
         "COMPOSE_FILE=docker-compose.yml;docker-compose.supabase.yml"
     )
+}
+if ($opcion -eq '2' -and -not $compartida) {
     Guardar 'activar-roles-supabase.sql' @(
         "-- Copie todo este archivo en el SQL Editor de Supabase y pulse Run."
         "-- Activa los usuarios de la API y de respaldos con las contrasenas del .env."
@@ -82,11 +94,17 @@ Write-Host ""
 Write-Host "Listo: .env creado con todas las contrasenas."
 Write-Host "Contrasena de las cuentas de demostracion: SolunaDemo2026"
 Write-Host ""
-if ($opcion -eq '2') {
+if ($opcion -eq '2' -and -not $compartida) {
     Write-Host "Falta un paso en Supabase: abra el archivo activar-roles-supabase.sql, copie su"
     Write-Host "contenido en el SQL Editor del panel de Supabase y pulse Run."
+    Write-Host "Luego comparta con su equipo, por un medio privado, el valor de DB_APP_PASSWORD"
+    Write-Host "de su .env: cada integrante lo pega cuando este script se lo pida."
     Write-Host ""
     Write-Host "Despues ejecute:"
+    Write-Host "  docker compose up --build -d"
+    Write-Host "  docker compose exec api python -m app.seed"
+} elseif ($opcion -eq '2') {
+    Write-Host "Se usara la contrasena compartida. Ejecute:"
     Write-Host "  docker compose up --build -d"
     Write-Host "  docker compose exec api python -m app.seed"
 } else {

@@ -306,33 +306,40 @@ del proveedor. La API, Nginx, el simulador y Mailpit siguen corriendo en Docker.
 
 - **Esquema `hotel`:** las tablas no están en `public`. Supabase publica `public` como API REST abierta;
   en `hotel`, los datos de huéspedes y pagos no quedan expuestos.
-- **Migración:** el esquema completo está en `supabase/migrations/`. Si cambia el esquema, hay que actualizar
-  también `db/init`.
+- **Migraciones:** el esquema completo está en `supabase/migrations/`. Si cambia el esquema, hay que agregar
+  una migración nueva ahí y actualizar también `db/init`.
 - **Conexión:** la API entra por el *pooler* de Supabase en modo sesión (funciona con IPv4) y exige TLS.
-- **Conexiones:** cada réplica abre como máximo 4, porque el plan gratuito admite pocas.
+- **Conexiones:** cada réplica abre como máximo 2 (6 por computadora), porque el plan gratuito admite pocas.
 - **Usuarios:** `app_hotel` y `respaldo` tienen los mismos privilegios mínimos que en Docker.
 
-### Pasos (una sola vez)
+### Estado del proyecto de Supabase del equipo
 
-1. **Crear el esquema.** Con la integración de GitHub activa en Supabase, la migración se aplica sola al
-   fusionar en `main`. Verifíquelo en *Database > Migrations* del panel. Si no aparece, abra
-   `supabase/migrations/20261110120000_esquema_hotel.sql`, copie todo en el *SQL Editor* y pulse **Run**.
+El esquema ya está aplicado en el proyecto del equipo: las dos migraciones de `supabase/migrations/`
+aparecen en *Database > Migrations* del panel, con las 46 habitaciones, las tarifas y los usuarios de la
+base (`app_hotel` y `respaldo`) creados, pero todavía sin inicio de sesión. Los nombres de los archivos
+coinciden con las versiones que registró Supabase, así que la integración con GitHub no intentará
+aplicarlas otra vez al fusionar en `main`.
 
-   En la configuración de la integración, *Supabase directory* debe apuntar a la raíz del repositorio
-   (donde está la carpeta `supabase/`) y *Deploy to production* debe estar activado.
+Todo el equipo comparte esa base, por eso la contraseña del usuario de la API es una sola: la genera la
+primera persona y los demás usan la misma.
 
-2. **Crear el `.env` en modo Supabase.** Ejecute el script y elija la opción **2**:
+### Primera persona del equipo (una sola vez)
+
+1. **Crear el `.env` en modo Supabase.** Ejecute el script y elija la opción **2**:
 
    ```bash
    sh crear-env.sh               # en Windows: powershell -ExecutionPolicy Bypass -File .\crear-env.ps1
    ```
 
    Le pedirá la cadena de conexión: en el panel de Supabase pulse **Connect**, elija **Session pooler**
-   y cópiela. No hace falta poner la contraseña.
+   y cópiela. No hace falta poner la contraseña. Cuando pregunte por una contraseña compartida, presione Enter.
 
-3. **Activar los usuarios de la base.** El script crea `activar-roles-supabase.sql` con las contraseñas del
+2. **Activar los usuarios de la base.** El script crea `activar-roles-supabase.sql` con las contraseñas del
    `.env`. Copie su contenido en el *SQL Editor* de Supabase y pulse **Run**. Ese archivo tiene contraseñas:
    Git lo ignora y no debe compartirse.
+
+3. **Compartir la contraseña de la API** (el valor de `DB_APP_PASSWORD` de su `.env`) con el equipo por un
+   medio privado, nunca por el repositorio ni por un grupo abierto.
 
 4. **Levantar el sistema y crear las cuentas de demostración:**
 
@@ -345,12 +352,22 @@ del proveedor. La API, Nginx, el simulador y Mailpit siguen corriendo en Docker.
 
 5. **Comprobar:** `curl -sk https://localhost/api/salud` debe responder `"base_de_datos": "ok"`.
 
-Si vuelve a ejecutar `crear-env`, las contraseñas cambian: repita el paso 3.
-Para volver a la base en Docker, ejecute `crear-env` y elija la opción **1**.
+### Los demás integrantes
+
+1. Ejecute `crear-env`, elija la opción **2**, pegue la misma cadena de conexión y, cuando lo pida, la
+   contraseña de la API que le compartieron. No se crea ningún archivo SQL: los usuarios ya están activos.
+2. `docker compose up --build -d`. No hace falta crear las cuentas de demostración otra vez: ya están en la
+   base compartida (contraseña `SolunaDemo2026`).
+
+Si la primera persona vuelve a ejecutar `crear-env` sin pegar la contraseña compartida, se genera una nueva:
+habría que repetir el paso 2 y volver a compartirla. Para volver a la base en Docker, ejecute `crear-env` y
+elija la opción **1**.
 
 ### Límites del plan gratuito
 
 - Supabase pausa el proyecto tras una semana sin uso; se reactiva desde el panel.
+- El plan admite pocas conexiones simultáneas. Cada computadora abre como máximo 6; si varias encienden el
+  sistema a la vez y la API registra un error de conexión del *pooler*, apague el sistema en las que no se usen.
 - Los respaldos automáticos y la restauración a un punto en el tiempo dependen del plan de pago, por eso
   se mantiene el respaldo propio del bloque 4.
 

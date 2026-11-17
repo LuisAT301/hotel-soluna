@@ -22,6 +22,7 @@ read -r opcion || opcion=1
 
 SUPABASE_REF=""
 SUPABASE_HOST=""
+COMPARTIDA=""
 if [ "$opcion" = "2" ]; then
     echo ""
     echo "En el panel de Supabase pulse 'Connect', elija 'Session pooler' y copie la cadena"
@@ -35,6 +36,16 @@ if [ "$opcion" = "2" ]; then
         echo "No se reconoció la cadena. Verifique que sea la de 'Session pooler' y vuelva a ejecutar el script."
         exit 1
     fi
+    # Todo el equipo comparte la misma base, así que la contraseña del usuario
+    # de la API también es una sola: la genera quien configura Supabase primero.
+    echo ""
+    echo "Si otro integrante ya activó los usuarios de la base en Supabase, pegue la"
+    echo "contraseña de la API (DB_APP_PASSWORD) que le compartió por un medio privado."
+    printf "Contraseña compartida (Enter si usted es el primero del equipo): "
+    stty -echo 2>/dev/null || true
+    read -r COMPARTIDA || COMPARTIDA=""
+    stty echo 2>/dev/null || true
+    echo ""
 fi
 
 if [ -f .env ]; then
@@ -42,7 +53,7 @@ if [ -f .env ]; then
     echo "Había un .env: se guardó una copia en .env.anterior"
 fi
 
-APP_PASS=$(aleatorio)
+APP_PASS=${COMPARTIDA:-$(aleatorio)}
 RESPALDO_PASS=$(aleatorio)
 
 cat > .env <<EOF
@@ -64,6 +75,8 @@ SUPABASE_REF=$SUPABASE_REF
 SUPABASE_HOST=$SUPABASE_HOST
 COMPOSE_FILE=docker-compose.yml:docker-compose.supabase.yml
 EOF
+fi
+if [ "$opcion" = "2" ] && [ -z "$COMPARTIDA" ]; then
     # Comando para activar los usuarios de la base con estas mismas contraseñas
     cat > activar-roles-supabase.sql <<EOF
 -- Copie todo este archivo en el SQL Editor de Supabase y pulse "Run".
@@ -78,11 +91,17 @@ echo ""
 echo "Listo: .env creado con todas las contraseñas."
 echo "Contraseña de las cuentas de demostración: SolunaDemo2026"
 echo ""
-if [ "$opcion" = "2" ]; then
+if [ "$opcion" = "2" ] && [ -z "$COMPARTIDA" ]; then
     echo "Falta un paso en Supabase: abra el archivo activar-roles-supabase.sql, copie su"
     echo "contenido en el SQL Editor del panel de Supabase y pulse 'Run'."
+    echo "Luego comparta con su equipo, por un medio privado, el valor de DB_APP_PASSWORD"
+    echo "de su .env: cada integrante lo pega cuando este script se lo pida."
     echo ""
     echo "Después ejecute:"
+    echo "  docker compose up --build -d"
+    echo "  docker compose exec api python -m app.seed"
+elif [ "$opcion" = "2" ]; then
+    echo "Se usará la contraseña compartida. Ejecute:"
     echo "  docker compose up --build -d"
     echo "  docker compose exec api python -m app.seed"
 else

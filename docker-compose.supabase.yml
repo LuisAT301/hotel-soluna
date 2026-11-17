@@ -21,6 +21,7 @@ services:
       # El pooler identifica el proyecto con "rol.referencia"
       DB_USER: app_hotel.${SUPABASE_REF:?Falta SUPABASE_REF en .env (ejecute crear-env en modo Supabase)}
       DB_SSLMODE: require
-      # El plan gratuito admite pocas conexiones: 3 réplicas x (2 + 2) = 12
-      DB_POOL: "2"
-      DB_POOL_EXTRA: "2"
+      # El plan gratuito admite pocas conexiones y varias computadoras del equipo
+      # comparten la misma base: 3 réplicas x (1 + 1) = 6 por computadora
+      DB_POOL: "1"
+      DB_POOL_EXTRA: "1"
