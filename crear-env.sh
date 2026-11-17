@@ -97,12 +97,14 @@ if [ "$opcion" = "2" ] && [ -z "$COMPARTIDA" ]; then
     echo "Luego comparta con su equipo, por un medio privado, el valor de DB_APP_PASSWORD"
     echo "de su .env: cada integrante lo pega cuando este script se lo pida."
     echo ""
-    echo "Después ejecute:"
-    echo "  docker compose up --build -d"
+    echo "Después ejecute (--force-recreate hace que la API tome la contraseña nueva):"
+    echo "  docker compose --profile solo-local down"
+    echo "  docker compose up --build -d --force-recreate"
     echo "  docker compose exec api python -m app.seed"
 elif [ "$opcion" = "2" ]; then
     echo "Se usará la contraseña compartida. Ejecute:"
-    echo "  docker compose up --build -d"
+    echo "  docker compose --profile solo-local down"
+    echo "  docker compose up --build -d --force-recreate"
     echo "  docker compose exec api python -m app.seed"
 else
     echo "Ahora ejecute:"

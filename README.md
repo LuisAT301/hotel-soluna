@@ -341,10 +341,13 @@ primera persona y los demás usan la misma.
 3. **Compartir la contraseña de la API** (el valor de `DB_APP_PASSWORD` de su `.env`) con el equipo por un
    medio privado, nunca por el repositorio ni por un grupo abierto.
 
-4. **Levantar el sistema y crear las cuentas de demostración:**
+4. **Levantar el sistema y crear las cuentas de demostración.** El primer comando apaga lo que hubiera con la
+   base local; `--force-recreate` obliga a crear contenedores nuevos, que tomen la contraseña del `.env` actual
+   (Docker no recrea un contenedor solo porque cambió el valor de un secreto):
 
    ```bash
-   docker compose up --build -d
+   docker compose --profile solo-local down
+   docker compose up --build -d --force-recreate
    docker compose exec api python -m app.seed
    ```
 
@@ -356,12 +359,30 @@ primera persona y los demás usan la misma.
 
 1. Ejecute `crear-env`, elija la opción **2**, pegue la misma cadena de conexión y, cuando lo pida, la
    contraseña de la API que le compartieron. No se crea ningún archivo SQL: los usuarios ya están activos.
-2. `docker compose up --build -d`. No hace falta crear las cuentas de demostración otra vez: ya están en la
-   base compartida (contraseña `SolunaDemo2026`).
+2. `docker compose --profile solo-local down` y luego `docker compose up --build -d --force-recreate`. No hace
+   falta crear las cuentas de demostración otra vez: ya están en la base compartida (contraseña `SolunaDemo2026`).
 
 Si la primera persona vuelve a ejecutar `crear-env` sin pegar la contraseña compartida, se genera una nueva:
 habría que repetir el paso 2 y volver a compartirla. Para volver a la base en Docker, ejecute `crear-env` y
 elija la opción **1**.
+
+### Si la API no enciende con Supabase ("unhealthy")
+
+Casi siempre es la contraseña: la que tiene la API no coincide con la de `app_hotel` en Supabase. Tras varios
+intentos fallidos, Supabase además bloquea nuevas conexiones por unos minutos.
+
+1. Apague todo: `docker compose --profile solo-local down`.
+2. Genere una contraseña nueva en el `.env`, guarde el SQL en `activar-roles-supabase.sql` y cópielo (Mac):
+
+   ```bash
+   NUEVA=$(od -An -tx1 -N24 /dev/urandom | tr -dc '0-9a-f'); sed -i '' "s/^DB_APP_PASSWORD=.*/DB_APP_PASSWORD=$NUEVA/" .env; printf "ALTER ROLE app_hotel WITH LOGIN PASSWORD '%s';\n" "$NUEVA" > activar-roles-supabase.sql; pbcopy < activar-roles-supabase.sql; unset NUEVA; echo "Listo: SQL copiado y guardado en activar-roles-supabase.sql"
+   ```
+
+3. En el *SQL Editor* de Supabase, pegue (debe empezar con `ALTER ROLE app_hotel`) y pulse **Run**.
+4. Espere un minuto y encienda con contenedores nuevos: `docker compose up -d --force-recreate`.
+
+Nunca pegue la contraseña en un chat, correo o mensaje. Si ocurre, cámbiela con estos mismos pasos y
+compártala de nuevo con el equipo por un medio privado.
 
 ### Límites del plan gratuito
 

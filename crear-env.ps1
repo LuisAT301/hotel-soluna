@@ -100,12 +100,14 @@ if ($opcion -eq '2' -and -not $compartida) {
     Write-Host "Luego comparta con su equipo, por un medio privado, el valor de DB_APP_PASSWORD"
     Write-Host "de su .env: cada integrante lo pega cuando este script se lo pida."
     Write-Host ""
-    Write-Host "Despues ejecute:"
-    Write-Host "  docker compose up --build -d"
+    Write-Host "Despues ejecute (--force-recreate hace que la API tome la contrasena nueva):"
+    Write-Host "  docker compose --profile solo-local down"
+    Write-Host "  docker compose up --build -d --force-recreate"
     Write-Host "  docker compose exec api python -m app.seed"
 } elseif ($opcion -eq '2') {
     Write-Host "Se usara la contrasena compartida. Ejecute:"
-    Write-Host "  docker compose up --build -d"
+    Write-Host "  docker compose --profile solo-local down"
+    Write-Host "  docker compose up --build -d --force-recreate"
     Write-Host "  docker compose exec api python -m app.seed"
 } else {
     Write-Host "Ahora ejecute:"
