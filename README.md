@@ -392,6 +392,26 @@ compártala de nuevo con el equipo por un medio privado.
 - Los respaldos automáticos y la restauración a un punto en el tiempo dependen del plan de pago, por eso
   se mantiene el respaldo propio del bloque 4.
 
+## Despliegue en Vercel (en progreso)
+
+La API también se publica en Vercel, conectada a la base de Supabase. La versión de Docker sigue siendo la
+que se usa para las demostraciones de réplicas, balanceo y escalado.
+
+- **Proyecto:** `hotel-soluna`, con raíz `api/` y el preset de FastAPI (Vercel encuentra `app/main.py`).
+  Python 3.13 (`api/.python-version`); duración máxima y archivos excluidos en `api/vercel.json`.
+- **Base de datos:** el pooler de Supabase en **modo transacción** (puerto 6543), que reparte las conexiones
+  entre todas las instancias de la función. Con `DB_MODO_TRANSACCION=si`, la API no guarda conexiones
+  abiertas ni usa sentencias preparadas, que ese modo no admite.
+- **Correo:** con `CORREO_SEGUNDO_PLANO=no` se envía dentro de la misma solicitud, porque en Vercel lo que
+  corre después de responder puede quedar congelado. Mientras no haya un servicio de correo real,
+  `SMTP_HOST=ninguno` lo desactiva.
+- **Variables de entorno** (producción y vista previa): `DB_HOST`, `DB_PORT=6543`, `DB_NAME=postgres`,
+  `DB_USER=app_hotel.<referencia>`, `DB_PASSWORD`, `DB_SSLMODE=require`, `DB_MODO_TRANSACCION=si`,
+  `CORREO_SEGUNDO_PLANO=no`, `SMTP_HOST`, `JWT_SECRET`, `SERVICIOS_LLAVE` y `OTA_SECRETO`.
+  Las contraseñas se cargan desde el panel de Vercel, nunca en el repositorio.
+
+Pendiente: simulador de pagos (fase 2), sitio web con las reglas de Nginx (fase 3) y correo real (fase 4).
+
 ## API (bloque 1)
 
 | Método | Ruta | Quién puede usarla |

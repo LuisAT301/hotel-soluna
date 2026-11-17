@@ -27,7 +27,11 @@ os.environ.setdefault("SIMULADOR_URL", f"http://127.0.0.1:{PUERTO_SIMULADOR}")
 
 def _admin():
     return psycopg.connect(
-        host=os.environ["DB_HOST"], port=os.environ.get("DB_PORT", "5432"), dbname=os.environ.get("DB_NAME", "hotel"),
+        # ADMIN_DB_HOST/ADMIN_DB_PORT: para cuando la API pasa por un pooler que solo
+        # conoce al usuario de la API (prueba del modo Vercel con PgBouncer)
+        host=os.environ.get("ADMIN_DB_HOST", os.environ["DB_HOST"]),
+        port=os.environ.get("ADMIN_DB_PORT", os.environ.get("DB_PORT", "5432")),
+        dbname=os.environ.get("DB_NAME", "hotel"),
         user="postgres", password=os.environ["ADMIN_DB_PASSWORD"], autocommit=True,
         # "hotel" es el esquema en Supabase; en la base de Docker no existe y se usa "public"
         options="-c search_path=hotel,public",

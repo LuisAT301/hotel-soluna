@@ -3,6 +3,7 @@ from collections.abc import Iterator
 
 from sqlalchemy import URL, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from . import config
 
@@ -16,11 +17,16 @@ url = URL.create(
     query={"sslmode": config.DB_SSLMODE},
 )
 
-# Cada réplica de la API mantiene un grupo pequeño de conexiones.
-# En Docker: 3 x (5 + 5) = 30 como máximo, por debajo del límite de 100 de
-# PostgreSQL. En Supabase (plan gratuito) se baja a 3 x (2 + 2) = 12.
-engine = create_engine(url, pool_size=config.DB_POOL, max_overflow=config.DB_POOL_EXTRA,
-                       pool_pre_ping=True)
+if config.DB_MODO_TRANSACCION:
+    # Vercel: cada solicitud toma una conexión del pooler de Supabase y la
+    # devuelve al terminar; sin sentencias preparadas, que ese modo no admite.
+    engine = create_engine(url, poolclass=NullPool, connect_args={"prepare_threshold": None})
+else:
+    # Docker: cada réplica de la API mantiene un grupo pequeño de conexiones.
+    # Base local: 3 x (5 + 5) = 30 como máximo, por debajo del límite de 100 de
+    # PostgreSQL. Supabase en modo sesión: 3 x (1 + 1) = 6 por computadora.
+    engine = create_engine(url, pool_size=config.DB_POOL, max_overflow=config.DB_POOL_EXTRA,
+                           pool_pre_ping=True)
 SesionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
