@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 aleatorio() {
     # 48 caracteres hexadecimales al azar
-    od -An -tx1 -N24 /dev/urandom | tr -d ' \n'
+    od -An -tx1 -N24 /dev/urandom | tr -dc '0-9a-f'
 }
 
 echo "¿Dónde estará la base de datos?"
