@@ -126,6 +126,31 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Bloque 4: prueba de carga con Locust. No arranca con "up": se ejecuta con
+  # carga.sh. "carga-local" comparte la red de Nginx para llegar por
+  # https://localhost y validar su certificado; "carga-nube" va a Vercel.
+  carga-local:
+    image: locustio/locust:2.37.14
+    profiles: ["carga"]
+    user: root          # para escribir el reporte en ./carga/resultados en cualquier sistema
+    network_mode: "service:nginx"
+    working_dir: /mnt/carga
+    environment:
+      REQUESTS_CA_BUNDLE: /certs/soluna.crt     # el certificado autofirmado del prototipo
+    volumes:
+      - ./carga:/mnt/carga
+      - certificados:/certs:ro
+    restart: "no"
+
+  carga-nube:
+    image: locustio/locust:2.37.14
+    profiles: ["carga"]
+    user: root          # para escribir el reporte en ./carga/resultados en cualquier sistema
+    working_dir: /mnt/carga
+    volumes:
+      - ./carga:/mnt/carga
+    restart: "no"
+
   # Visor web de la base de datos, SOLO para desarrollo.
   # No arranca con "docker compose up -d": se enciende a pedido con
   #   docker compose up -d adminer      y se abre en http://localhost:8081

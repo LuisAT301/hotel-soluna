@@ -33,7 +33,7 @@ nodo local de contingencia en el hotel.
 | Servicios externos simulados | FastAPI: pasarela de pago, Hacienda y agencia de viajes en línea (OTA) |
 | Correo | Mailpit en Docker; Brevo en la nube |
 | Nube | Vercel (sitio, API y simulador), Supabase (PostgreSQL) |
-| Prueba de carga | Locust *(bloque 4)* |
+| Prueba de carga | Locust 2.37 (en un contenedor, sin instalar nada) |
 | Red del hotel | Cisco Packet Tracer *(bloque 5)* |
 
 ## Arquitectura
@@ -592,6 +592,45 @@ tiempo total. En las pruebas tomó menos de 10 segundos con los datos de demostr
 El intervalo y la cantidad de copias se cambian en el `.env` con `RESPALDO_INTERVALO_MINUTOS` y
 `RESPALDO_CONSERVAR`.
 
+### Prueba de carga con Locust
+
+`carga/locustfile.py` simula el tráfico de una temporada alta con tres tipos de usuario:
+
+- **Visitantes** (la mayoría): abren la página, consultan el catálogo y buscan habitaciones libres.
+- **Clientes:** inician sesión una vez, revisan sus reservas y, de vez en cuando, reservan y cancelan de
+  inmediato. Así se ejercen las escrituras y la regla contra la sobreventa sin dejar habitaciones ocupadas.
+- **Monitor:** anota qué réplica respondió cada consulta a `/api/salud`, para mostrar el balanceo.
+
+Locust corre en un contenedor, así que no hay que instalar nada. Contra Docker llega por https://localhost
+y valida el certificado del prototipo:
+
+```bash
+sh carga.sh docker                 # 30 usuarios por 1 minuto contra el prototipo encendido
+sh carga.sh vercel                 # 15 usuarios por 1 minuto contra el sitio publicado
+sh carga.sh docker 50 2m           # cantidad de usuarios y duración a elección
+```
+
+Al terminar se muestra la tabla de tiempos por operación y el reparto entre réplicas. El reporte con gráficos
+queda en `carga/resultados/` (Git lo ignora). Contra Vercel se limita a 50 usuarios para no gastar las cuotas
+gratuitas.
+
+**Demostración del escalado horizontal en Docker:**
+
+```bash
+docker compose up -d --scale api=5 --no-recreate
+```
+
+```bash
+sh carga.sh docker
+```
+
+Nginx incorpora las réplicas nuevas sin reiniciarse, y el resumen muestra la carga repartida entre las cinco.
+En Vercel no hay nada que escalar a mano: la plataforma crea y destruye instancias de la función según la
+demanda, y el resumen muestra cuántas respondieron.
+
+Los límites de Nginx siguen activos durante la prueba: 10 inicios de sesión por minuto por dirección. Por eso
+los clientes simulados inician sesión una sola vez y la prueba no pide tokens de tarjeta.
+
 ## API (bloque 1)
 
 | Método | Ruta | Quién puede usarla |
@@ -748,7 +787,7 @@ docker compose logs simulador        # cambie "simulador" por el servicio que fa
 - [x] **Bloque 3:** simulador de pasarela, OTA y factura, más Mailpit.
 - [x] **Nube:** base en Supabase; API (fase 1), simulador (fase 2) y sitio (fase 3) en Vercel; correo real con Brevo (fase 4); documentación y prueba completa (fase 5).
 - [x] **Bloque 4:** respaldos automáticos de Supabase, nodo de contingencia, simulacro y regreso a la nube.
-- [ ] **Bloque 4 (carga):** prueba de carga con Locust.
+- [x] **Bloque 4 (carga):** prueba de carga con Locust contra Docker y Vercel.
 - [ ] **Bloque 5:** red en Packet Tracer (configuraciones y guía).
 - [ ] **Bloque 6:** diagramas.
 
@@ -770,6 +809,7 @@ hotel-soluna/
 │   └── img/              logo e ilustración de la playa
 ├── simulador/            pasarela de pago, Hacienda y OTA simuladas
 ├── pruebas-nube/         prueba de punta a punta contra Vercel
+├── carga/                prueba de carga con Locust (carga.sh la ejecuta)
 ├── docs/                 arquitectura en la nube (y diagramas del bloque 6)
 └── api/
     ├── Dockerfile
