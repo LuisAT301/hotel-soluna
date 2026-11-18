@@ -535,6 +535,63 @@ En Windows, use `py pruebas-nube\prueba_vercel.py`. Con la llave de servicios en
 comprueba el registro en Hacienda y el aviso firmado de la OTA. Esa llave se comparte por un medio privado,
 nunca por el repositorio.
 
+## Continuidad: respaldos y nodo de contingencia (bloque 4)
+
+El problema de origen incluía "respaldos nunca probados". En la nube, la base vive en Supabase, en una sola
+región y sin restauración a un punto en el tiempo en el plan gratuito. La computadora del hotel cumple dos
+funciones de continuidad:
+
+- **Guarda copias de la nube.** Un contenedor copia el esquema `hotel` de Supabase cada 6 horas con `pg_dump`,
+  usando el usuario `respaldo`, que solo puede leer. Cada copia se comprueba con `pg_restore` antes de darla por
+  buena, se guarda con su huella SHA-256 y se conservan las últimas 28 (7 días).
+- **Sirve de nodo de contingencia.** Si la nube o Internet fallan, restaura la última copia en la base de Docker
+  y el hotel sigue operando en https://localhost, o en la IP de esa computadora dentro de la red del hotel. No
+  necesita Internet: usa las imágenes de Docker que ya están en la computadora.
+
+Todo se maneja con `contingencia.sh`, que requiere el `.env` en modo Supabase. En Windows se ejecuta desde
+Git Bash.
+
+| Comando | Qué hace |
+|---|---|
+| `sh contingencia.sh iniciar` | Enciende los respaldos automáticos; el primero se hace de inmediato |
+| `sh contingencia.sh respaldar` | Hace un respaldo ahora |
+| `sh contingencia.sh estado` | Muestra las copias guardadas y los últimos eventos |
+| `sh contingencia.sh simulacro` | Respalda, restaura en una base aparte, compara con la nube y la borra, sin interrumpir nada |
+| `sh contingencia.sh activar` | Restaura la última copia y pasa a operar con la base local |
+| `sh contingencia.sh volver` | Genera el reporte de lo hecho en contingencia y regresa a la nube |
+
+**Solo una computadora debe encender los respaldos:** la de la persona que creó el `.env` con la opción 2 y
+activó los usuarios en Supabase. En las demás, la contraseña de `respaldo` no coincide, y los intentos
+fallidos harían que Supabase bloquee por unos minutos la dirección de esa red.
+
+### Simulacro para la exposición
+
+```bash
+sh contingencia.sh simulacro
+```
+
+Muestra el respaldo, la restauración con el conteo de registros, la comparación entre la nube y el nodo, y el
+tiempo total. En las pruebas tomó menos de 10 segundos con los datos de demostración.
+
+### Procedimiento ante una caída de la nube
+
+1. **Activar:** `sh contingencia.sh activar`. Restaura la copia más reciente y enciende Nginx, las tres
+   réplicas de la API, el simulador y Mailpit contra la base local. En las pruebas, el hotel volvió a operar
+   unos 20 segundos después.
+2. **Operar:** el personal entra en https://localhost con sus cuentas de siempre. Lo registrado en la nube
+   después de la última copia no está en el nodo: ese es el **RPO**, de hasta 6 horas con el intervalo por
+   defecto, y el comando lo indica al restaurar. Los correos quedan en Mailpit hasta volver.
+3. **Volver:** cuando la nube responda, `sh contingencia.sh volver`. Guarda en
+   `contingencia-cambios-AAAAMMDD-HHMM.csv` las reservas creadas o modificadas durante la contingencia y
+   regresa al modo Supabase. Esas reservas se registran en la nube antes de seguir operando; el archivo tiene
+   datos de huéspedes, así que Git lo ignora y debe borrarse después.
+
+`activar` no pisa una contingencia con trabajo hecho: si encuentra reservas sin conciliar, pide ejecutar
+`volver` primero. Para restaurar una copia en particular: `sh contingencia.sh activar hotel-AAAAMMDDTHHMMSSZ.dump`.
+
+El intervalo y la cantidad de copias se cambian en el `.env` con `RESPALDO_INTERVALO_MINUTOS` y
+`RESPALDO_CONSERVAR`.
+
 ## API (bloque 1)
 
 | Método | Ruta | Quién puede usarla |
@@ -690,7 +747,8 @@ docker compose logs simulador        # cambie "simulador" por el servicio que fa
 - [x] **Bloque 2:** Nginx con HTTPS, tres réplicas, límite de intentos, interfaz web.
 - [x] **Bloque 3:** simulador de pasarela, OTA y factura, más Mailpit.
 - [x] **Nube:** base en Supabase; API (fase 1), simulador (fase 2) y sitio (fase 3) en Vercel; correo real con Brevo (fase 4); documentación y prueba completa (fase 5).
-- [ ] **Bloque 4:** respaldos automáticos, restauración en el nodo de contingencia, Locust.
+- [x] **Bloque 4:** respaldos automáticos de Supabase, nodo de contingencia, simulacro y regreso a la nube.
+- [ ] **Bloque 4 (carga):** prueba de carga con Locust.
 - [ ] **Bloque 5:** red en Packet Tracer (configuraciones y guía).
 - [ ] **Bloque 6:** diagramas.
 
@@ -700,10 +758,13 @@ docker compose logs simulador        # cambie "simulador" por el servicio que fa
 hotel-soluna/
 ├── docker-compose.yml
 ├── docker-compose.supabase.yml   modo Supabase: la API usa la base en la nube
+├── docker-compose.contingencia.yml  nodo de contingencia: la API usa la copia restaurada
+├── contingencia.sh       respaldos, simulacro, contingencia y regreso a la nube
 ├── .env.example          plantilla de secretos (el .env real no se sube)
 ├── crear-env.sh / .ps1   crean el .env con contraseñas al azar (Mac y Linux / Windows)
 ├── db/init/              esquema, catálogo y usuarios de la base local (Docker)
 ├── supabase/migrations/  el mismo esquema para Supabase (esquema "hotel")
+├── respaldo/             respaldar.sh (pg_dump periódico) y restaurar.sh (pg_restore en el nodo)
 ├── nginx/                imagen de Nginx: HTTPS, balanceo y cabeceras de seguridad
 ├── web/                  sitio del hotel y panel del personal (HTML, CSS y JavaScript)
 │   └── img/              logo e ilustración de la playa

@@ -25,3 +25,31 @@ services:
       # comparten la misma base: 3 réplicas x (1 + 1) = 6 por computadora
       DB_POOL: "1"
       DB_POOL_EXTRA: "1"
+
+  # Bloque 4: respaldo automático de Supabase en el nodo de contingencia.
+  # Solo se enciende en la computadora que hace de nodo (sh contingencia.sh iniciar):
+  # en las demás, la contraseña de "respaldo" no coincide con la de Supabase.
+  respaldo:
+    image: postgres:17-alpine              # trae pg_dump 17, la misma versión de Supabase
+    profiles: ["respaldos"]
+    entrypoint: ["sh", "/scripts/respaldar.sh"]
+    environment:
+      ORIGEN_HOST: ${SUPABASE_HOST:?Falta SUPABASE_HOST en .env (ejecute crear-env en modo Supabase)}
+      ORIGEN_PUERTO: "5432"
+      ORIGEN_BASE: postgres
+      ORIGEN_USUARIO: respaldo.${SUPABASE_REF:?Falta SUPABASE_REF en .env (ejecute crear-env en modo Supabase)}
+      ORIGEN_SSLMODE: require
+      ORIGEN_PASSWORD_FILE: /run/secrets/db_respaldo_password
+      INTERVALO_MINUTOS: ${RESPALDO_INTERVALO_MINUTOS:-360}   # cada 6 horas
+      CONSERVAR: ${RESPALDO_CONSERVAR:-28}                    # 7 días de copias
+    secrets:
+      - db_respaldo_password
+    volumes:
+      - respaldos:/respaldos
+      - ./respaldo:/scripts:ro
+    networks:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  respaldos: {}

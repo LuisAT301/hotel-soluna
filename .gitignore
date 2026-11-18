@@ -13,6 +13,8 @@ venv/
 
 # Respaldos generados en la demostración
 respaldos/
+# Reportes de contingencia: tienen nombres y correos de huéspedes
+contingencia-cambios-*.csv
 
 # Sistema operativo y editores
 .DS_Store

@@ -1,0 +1,19 @@
+# =====================================================================
+# Hotel Soluna: nodo de contingencia (bloque 4)
+# Se suma a docker-compose.yml cuando la nube no está disponible: la base
+# local recibe la última copia de Supabase y la API trabaja con ella.
+#
+# No se usa directamente: lo maneja contingencia.sh (activar, simulacro, volver).
+# =====================================================================
+services:
+  db:
+    volumes:
+      - respaldos:/respaldos:ro            # copias hechas por el servicio "respaldo"
+      - ./respaldo:/scripts:ro             # restaurar.sh
+
+  api:
+    environment:
+      DB_NAME: hotel_contingencia          # la copia restaurada, con el esquema "hotel"
+
+volumes:
+  respaldos: {}

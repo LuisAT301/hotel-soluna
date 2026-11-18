@@ -2,8 +2,8 @@
 # Hotel Soluna: prototipo en Docker Compose
 # Bloque 2: Nginx (HTTPS y balanceo) + 3 réplicas de la API + PostgreSQL.
 # Bloque 3: simulador de servicios externos (pasarela, Hacienda, OTA) + Mailpit.
-# En los siguientes bloques se agregan los respaldos, el nodo de contingencia
-# y la prueba de carga.
+# Bloque 4: respaldos de Supabase y nodo de contingencia, con contingencia.sh
+# (docker-compose.contingencia.yml y el servicio "respaldo" del modo Supabase).
 #
 # Uso:  cp .env.example .env   (y cambiar los valores)
 #       docker compose up --build -d
