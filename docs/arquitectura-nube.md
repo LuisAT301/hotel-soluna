@@ -144,11 +144,36 @@ Persisten, sin embargo, dependencias que conviene declarar:
 
 - **Base de datos en una sola región.** El plan gratuito de Supabase no ofrece réplicas en otra región ni
   restauración a un punto en el tiempo. Una caída regional dejaría al sistema sin datos. La mitigación es el
-  bloque 4: respaldos propios restaurables en el nodo local de contingencia.
+  nodo local de contingencia del bloque 4, descrito en la sección 7.1.
 - **Una región de cómputo.** La API se ejecuta en `iad1`. Para un hotel en Costa Rica la latencia es
   aceptable, pero una caída de esa región afectaría al servicio.
 - **Dependencia de proveedores.** Vercel, Supabase y Brevo son puntos de falla externos. El código, en
   cambio, no está atado a ellos: la misma API corre en Docker con PostgreSQL y cualquier servidor SMTP.
+
+### 7.1. Nodo local de contingencia
+
+La arquitectura es híbrida: la computadora del hotel conserva copias de la base de la nube y puede asumir la
+operación si la nube o el enlace a Internet fallan.
+
+- **Respaldo.** Cada 6 horas, un contenedor copia el esquema `hotel` con `pg_dump`, usando un usuario de solo
+  lectura. Cada copia se valida con `pg_restore --list` antes de aceptarla, se guarda con su huella SHA-256 y
+  se conservan siete días. Una copia que no puede leerse se descarta y queda registrada como error.
+- **Restauración.** `restaurar.sh` verifica la huella, crea una base nueva y carga la copia con sus permisos,
+  de modo que la API conserva en el nodo los mismos privilegios mínimos que en Supabase. La restauración es
+  atómica: o se carga todo, o se detiene.
+- **Simulacro.** El mismo procedimiento se ejecuta sobre una base aparte y compara los conteos con la nube.
+  Así, el respaldo se prueba de forma periódica y no solo el día de la falla.
+- **Regreso.** Al volver a la nube, el nodo produce un reporte de las reservas creadas o modificadas durante
+  la contingencia, que se concilian a mano. Una sincronización automática exigiría resolver conflictos entre
+  dos bases que aceptaron escrituras a la vez, algo que excede el alcance del prototipo.
+
+| Indicador | Objetivo | Medido en las pruebas |
+|---|---|---|
+| RPO (datos que pueden perderse) | Hasta 6 horas, el intervalo de respaldo | Lo informa cada restauración |
+| RTO (tiempo hasta operar de nuevo) | Menos de 5 minutos | Unos 20 s con los datos de demostración |
+
+El intervalo de respaldo es un compromiso: reducirlo baja el RPO, pero aumenta las conexiones contra un plan
+gratuito con pocas disponibles.
 
 ## 8. Límites de los planes gratuitos
 
