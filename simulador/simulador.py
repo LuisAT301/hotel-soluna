@@ -7,10 +7,12 @@ Reemplaza, solo para el prototipo, a tres proveedores reales:
   3. OTA                /ota/...       una agencia de viajes en línea que envía
                                        reservas al hotel con un aviso firmado.
 
-Guarda todo en memoria: al reiniciar el contenedor se borra, como corresponde
-a un entorno de pruebas. Por eso corre una sola copia.
+En Docker guarda todo en memoria: al reiniciar el contenedor se borra, como
+corresponde a un entorno de pruebas, y por eso corre una sola copia. En Vercel
+guarda su estado en el esquema "simulador" de Supabase (ver almacen.py).
 
 Panel para la demostración (solo en el propio equipo): http://localhost:8090/docs
+En Vercel, el panel, la documentación y el envío de avisos de la OTA piden la llave.
 """
 import hashlib
 import hmac
@@ -29,6 +31,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from almacen import BaseDatos, Memoria
+
 
 def leer(nombre: str, defecto: str | None = None) -> str | None:
     """Igual que en la API: NOMBRE_FILE (secreto de Docker) o NOMBRE."""
@@ -44,7 +48,22 @@ API_URL = leer("API_URL", "http://api:8000")
 if not LLAVE_SERVICIOS or not OTA_SECRETO:
     raise RuntimeError("Faltan SERVICIOS_LLAVE u OTA_SECRETO (o sus variantes _FILE)")
 
+# "no" en Vercel: el panel, la documentación y el envío de avisos de la OTA
+# quedarían abiertos a Internet, así que piden la llave de comercio.
+PANEL_PUBLICO = (leer("PANEL_PUBLICO", "si") or "si").lower() in ("si", "sí", "true", "1")
+
+# Con SIM_DB_HOST, el estado vive en PostgreSQL (Vercel); si no, en memoria (Docker)
+if leer("SIM_DB_HOST"):
+    almacen = BaseDatos(host=leer("SIM_DB_HOST"), port=int(leer("SIM_DB_PORT", "5432")),
+                        dbname=leer("SIM_DB_NAME", "postgres"), user=leer("SIM_DB_USER"),
+                        password=leer("SIM_DB_PASSWORD"), sslmode=leer("SIM_DB_SSLMODE", "require"))
+else:
+    almacen = Memoria()
+
 app = FastAPI(
+    docs_url="/docs" if PANEL_PUBLICO else None,
+    redoc_url="/redoc" if PANEL_PUBLICO else None,
+    openapi_url="/openapi.json" if PANEL_PUBLICO else None,
     title="Simulador de servicios externos",
     version="0.1.0",
     description=(
@@ -68,10 +87,6 @@ MINUTOS_TOKEN = 15
 RECHAZADAS = {"4000000000000002": "fondos insuficientes"}
 FALLA_PASARELA = "4000000000000119"
 
-tokens: dict[str, dict] = {}        # token -> tarjeta (vive 15 minutos, se usa una vez)
-cobros: dict[str, dict] = {}        # id de transacción -> cobro o reembolso
-idempotencia: dict[str, dict] = {}  # Idempotency-Key -> datos recibidos y respuesta ya dada
-
 _portador = HTTPBearer(auto_error=False)
 
 
@@ -79,6 +94,12 @@ def autorizar(credencial: HTTPAuthorizationCredentials | None = Depends(_portado
     """Solo la API del hotel, que conoce la llave, puede cobrar o facturar."""
     if credencial is None or not hmac.compare_digest(credencial.credentials, LLAVE_SERVICIOS):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Llave de comercio inválida")
+
+
+def proteger_panel(credencial: HTTPAuthorizationCredentials | None = Depends(_portador)) -> None:
+    """En Docker el panel es abierto (solo escucha en el propio equipo); en Vercel pide la llave."""
+    if not PANEL_PUBLICO:
+        autorizar(credencial)
 
 
 def luhn_valido(numero: str) -> bool:
@@ -125,9 +146,12 @@ def tokenizar(tarjeta: Tarjeta):
         raise HTTPException(422, "La tarjeta está vencida")
 
     token = "tok_" + secrets.token_urlsafe(18)
-    tokens[token] = {"numero": numero, "titular": tarjeta.titular,
-                     "vence": time.monotonic() + MINUTOS_TOKEN * 60}
-    # El CVV se valida y se descarta: ni siquiera la pasarela lo conserva
+    # Se guarda lo mínimo: marca, últimos cuatro dígitos y el resultado que tendrá
+    # el cobro. Ni el número completo ni el CVV quedan guardados en ningún lado.
+    resultado = ("falla" if numero == FALLA_PASARELA
+                 else "rechazado" if numero in RECHAZADAS else "aprobado")
+    almacen.guardar_token(token, {"marca": marca(numero), "ultimos4": numero[-4:], "resultado": resultado,
+                                  "motivo": RECHAZADAS.get(numero)}, MINUTOS_TOKEN)
     return {"token": token, "marca": marca(numero), "ultimos4": numero[-4:]}
 
 
@@ -147,21 +171,21 @@ def cobrar(cobro: Cobro, idempotency_key: str = Header(min_length=8, max_length=
     porque se cortó la conexión), recibe la misma respuesta y no se cobra dos veces.
     """
     huella = cobro.model_dump_json()
-    if idempotency_key in idempotencia:
-        anterior = idempotencia[idempotency_key]
+    anterior = almacen.obtener_idempotencia(idempotency_key)
+    if anterior is not None:
         if anterior["huella"] != huella:
             # Misma llave con otros datos: es un error del comercio, no un reintento
             raise HTTPException(422, "La llave de idempotencia ya se usó con otros datos")
         return anterior["respuesta"]
 
-    tarjeta = tokens.pop(cobro.token, None)
-    if tarjeta is None or tarjeta["vence"] < time.monotonic():
+    tarjeta = almacen.tomar_token(cobro.token)
+    if tarjeta is None:
         raise HTTPException(422, "El token de pago no es válido o ya se usó")
-    if tarjeta["numero"] == FALLA_PASARELA:
-        tokens[cobro.token] = tarjeta  # el cliente podrá reintentar con el mismo token
+    if tarjeta["resultado"] == "falla":
+        almacen.guardar_token(cobro.token, tarjeta, MINUTOS_TOKEN)  # el cliente podrá reintentar
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Pasarela fuera de servicio (simulado)")
 
-    motivo = RECHAZADAS.get(tarjeta["numero"])
+    motivo = tarjeta["motivo"] if tarjeta["resultado"] == "rechazado" else None
     resultado = {
         "transaccion": "ch_" + secrets.token_hex(10),
         "tipo": "cobro",
@@ -170,27 +194,30 @@ def cobrar(cobro: Cobro, idempotency_key: str = Header(min_length=8, max_length=
         "monto": str(cobro.monto),
         "moneda": cobro.moneda,
         "referencia": cobro.referencia,
-        "marca": marca(tarjeta["numero"]),
-        "ultimos4": tarjeta["numero"][-4:],
+        "marca": tarjeta["marca"],
+        "ultimos4": tarjeta["ultimos4"],
         "fecha": ahora().isoformat(),
     }
-    cobros[resultado["transaccion"]] = resultado
-    idempotencia[idempotency_key] = {"huella": huella, "respuesta": resultado}
+    almacen.guardar_cobro(resultado)
+    almacen.guardar_idempotencia(idempotency_key, huella, resultado)
     return resultado
 
 
 @app.post("/pasarela/cobros/{transaccion}/reembolso", tags=["pasarela"], dependencies=[Depends(autorizar)])
 def reembolsar(transaccion: str):
     """Devuelve el monto completo de un cobro aprobado. Repetirlo no reembolsa dos veces."""
-    original = cobros.get(transaccion)
+    original = almacen.obtener_cobro(transaccion)
     if original is None or original["tipo"] != "cobro" or original["estado"] != "aprobado":
         raise HTTPException(404, "Cobro aprobado no encontrado")
-    if "reembolso" in original:
-        return cobros[original["reembolso"]]
-    resultado = {**original, "transaccion": "re_" + secrets.token_hex(10), "tipo": "reembolso",
+    if original.get("reembolso"):
+        return almacen.obtener_cobro(original["reembolso"])
+    datos = {k: v for k, v in original.items() if k != "reembolso"}
+    resultado = {**datos, "transaccion": "re_" + secrets.token_hex(10), "tipo": "reembolso",
                  "estado": "aprobado", "original": transaccion, "fecha": ahora().isoformat()}
-    original["reembolso"] = resultado["transaccion"]
-    cobros[resultado["transaccion"]] = resultado
+    almacen.guardar_cobro(resultado)
+    if not almacen.marcar_reembolso(transaccion, resultado["transaccion"]):
+        # Otra solicitud reembolsó al mismo tiempo: se devuelve ese reembolso, no uno nuevo
+        return almacen.obtener_cobro(almacen.obtener_cobro(transaccion)["reembolso"])
     return resultado
 
 
@@ -198,7 +225,6 @@ def reembolsar(transaccion: str):
 # 2. Hacienda (recepción de comprobantes electrónicos)
 # =====================================================================
 IVA = Decimal("0.13")
-comprobantes: dict[str, dict] = {}
 
 
 class Linea(BaseModel):
@@ -223,8 +249,9 @@ class Comprobante(BaseModel):
 @app.post("/hacienda/recepcion", tags=["hacienda"], dependencies=[Depends(autorizar)])
 def recibir_comprobante(c: Comprobante):
     """Revisa la factura y responde "aceptada" o "rechazada" con el motivo."""
-    if c.clave in comprobantes:
-        return comprobantes[c.clave]["respuesta"]
+    existente = almacen.obtener_comprobante(c.clave)
+    if existente is not None:
+        return existente["respuesta"]
     errores = []
     if not (len(c.clave) == 50 and c.clave.isdigit() and c.clave.startswith("506")):
         errores.append("la clave debe tener 50 dígitos y empezar con 506")
@@ -245,15 +272,16 @@ def recibir_comprobante(c: Comprobante):
         "mensaje": "; ".join(errores) or "Comprobante aceptado",
         "fecha": ahora().isoformat(),
     }
-    comprobantes[c.clave] = {"comprobante": c.model_dump(mode="json"), "respuesta": respuesta}
+    almacen.guardar_comprobante(c.clave, c.model_dump(mode="json"), respuesta)
     return respuesta
 
 
-@app.get("/hacienda/comprobantes/{clave}", tags=["hacienda"])
+@app.get("/hacienda/comprobantes/{clave}", tags=["hacienda"], dependencies=[Depends(proteger_panel)])
 def consultar_comprobante(clave: str):
-    if clave not in comprobantes:
+    comprobante = almacen.obtener_comprobante(clave)
+    if comprobante is None:
         raise HTTPException(404, "Comprobante no encontrado")
-    return comprobantes[clave]
+    return comprobante
 
 
 # =====================================================================
@@ -263,7 +291,6 @@ NOMBRES = ["María Fernández", "John Carter", "Sofía Rojas", "Lukas Becker", "
            "Emma Dubois", "Diego Solano", "Hannah Smith", "Valeria Chaves", "Marco Bianchi"]
 TIPOS = ["estándar", "superior", "suite"]
 CAPACIDAD = {"estándar": 2, "superior": 3, "suite": 4}
-enviadas: list[dict] = []
 
 
 def firmar(cuerpo: bytes, fecha: int, secreto: str) -> str:
@@ -285,7 +312,7 @@ class EnvioOTA(BaseModel):
     fecha_vieja: bool = Field(default=False, description="Envía un aviso de hace una hora (repetición)")
 
 
-@app.post("/ota/enviar", tags=["ota"])
+@app.post("/ota/enviar", tags=["ota"], dependencies=[Depends(proteger_panel)])
 def enviar_reserva_ota(envio: EnvioOTA | None = None):
     """Simula que un huésped reservó en la OTA: se envía el aviso firmado al hotel."""
     envio = envio or EnvioOTA()
@@ -306,8 +333,8 @@ def enviar_reserva_ota(envio: EnvioOTA | None = None):
     fecha = int(time.time()) - (3600 if envio.fecha_vieja else 0)
     firma = firmar(cuerpo, fecha, "secreto-equivocado" if envio.firma_invalida else OTA_SECRETO)
 
-    # En producción el aviso entraría por Internet a https://<hotel>/api/integraciones/...
-    # pasando por Nginx; en el prototipo va directo a la red interna de Docker.
+    # En Docker el aviso va directo a la red interna; en Vercel, API_URL es la
+    # dirección pública de la API, como lo haría una OTA real.
     try:
         r = httpx.post(f"{API_URL}/api/integraciones/ota/reservas", content=cuerpo, timeout=15,
                        headers={"Content-Type": "application/json", "X-OTA-Fecha": str(fecha),
@@ -315,20 +342,20 @@ def enviar_reserva_ota(envio: EnvioOTA | None = None):
         resultado = {"enviado": datos, "respuesta_hotel": {"codigo_http": r.status_code, "cuerpo": r.json()}}
     except (httpx.HTTPError, ValueError) as error:
         resultado = {"enviado": datos, "respuesta_hotel": {"error": str(error)}}
-    enviadas.append(resultado)
+    almacen.guardar_aviso(resultado)
     return resultado
 
 
 # =====================================================================
 # Panel y salud
 # =====================================================================
-@app.get("/panel", tags=["panel"])
+@app.get("/panel", tags=["panel"], dependencies=[Depends(proteger_panel)])
 def panel():
-    """Todo lo que ha pasado por el simulador desde que arrancó."""
+    """Todo lo que ha pasado por el simulador (en Docker, desde que arrancó)."""
     return {
-        "pasarela": list(cobros.values()),
-        "hacienda": [c["respuesta"] for c in comprobantes.values()],
-        "ota": enviadas,
+        "pasarela": almacen.listar_cobros(),
+        "hacienda": almacen.listar_respuestas_hacienda(),
+        "ota": almacen.listar_avisos(),
     }
 
 

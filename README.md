@@ -314,9 +314,10 @@ del proveedor. La API, Nginx, el simulador y Mailpit siguen corriendo en Docker.
 
 ### Estado del proyecto de Supabase del equipo
 
-El esquema ya está aplicado en el proyecto del equipo: las dos migraciones de `supabase/migrations/`
+El esquema ya está aplicado en el proyecto del equipo: las migraciones de `supabase/migrations/`
 aparecen en *Database > Migrations* del panel, con las 46 habitaciones, las tarifas y los usuarios de la
-base (`app_hotel` y `respaldo`) creados, pero todavía sin inicio de sesión. Los nombres de los archivos
+base (`app_hotel` y `respaldo`) creados, pero todavía sin inicio de sesión. La tercera migración crea el
+esquema `simulador` y su usuario, que usa solo la versión de Vercel (fase 2). Los nombres de los archivos
 coinciden con las versiones que registró Supabase, así que la integración con GitHub no intentará
 aplicarlas otra vez al fusionar en `main`.
 
@@ -392,7 +393,7 @@ compártala de nuevo con el equipo por un medio privado.
 - Los respaldos automáticos y la restauración a un punto en el tiempo dependen del plan de pago, por eso
   se mantiene el respaldo propio del bloque 4.
 
-## Despliegue en Vercel (en progreso)
+## Despliegue en Vercel
 
 La API también se publica en Vercel, conectada a la base de Supabase. La versión de Docker sigue siendo la
 que se usa para las demostraciones de réplicas, balanceo y escalado.
@@ -422,7 +423,38 @@ cumple el papel de Nginx:
 - **Cabeceras de seguridad:** las mismas que agrega Nginx, más HSTS, porque el certificado de Vercel es real.
 - En Docker, Nginx no publica `/vercel.json`.
 
-Pendiente: simulador de pagos (fase 2), que también recibirá `/pasarela/tokens`, y correo real (fase 4).
+### Simulador de servicios externos en Vercel (fase 2)
+
+La pasarela de pago, Hacienda y la OTA se publican como un tercer proyecto, `hotel-soluna-simulador`, con raíz
+`simulador/` y el preset de FastAPI (`simulador/main.py`). Representan a otros proveedores, por eso viven
+aparte de la API, igual que en Docker.
+
+- **Estado compartido:** en Vercel cada solicitud puede atenderla una instancia distinta, así que un token
+  creado en una debe poder cobrarse en otra. Cuando existe `SIM_DB_HOST`, el simulador guarda tokens, cobros,
+  reembolsos, comprobantes y avisos en el esquema `simulador` de Supabase (`simulador/almacen.py`); sin esa
+  variable, como en Docker, los guarda en memoria.
+- **Aislamiento:** el esquema tiene su propio usuario, `app_simulador`, que no puede leer el esquema `hotel`;
+  la API tampoco puede leer el del simulador. Solo `reembolso` se puede modificar en un cobro, y un token se
+  borra en la misma operación que lo usa, así que no puede cobrarse dos veces.
+- **Datos de tarjeta:** al crear el token solo se guardan la marca, los últimos cuatro dígitos y el resultado
+  del cobro; nunca el número completo ni el CVV.
+- **Panel protegido:** con `PANEL_PUBLICO=no`, `/panel`, `/ota/enviar` y la consulta de comprobantes exigen
+  la llave de servicios, y la documentación interactiva queda desactivada. En Docker siguen abiertos para la
+  demostración.
+- **Reenvío:** el sitio envía `/pasarela/tokens` al simulador (`web/vercel.json`), así que la tarjeta sigue
+  saliendo del navegador hacia la pasarela sin pasar por la API.
+- **Variables** (producción y vista previa): `API_URL`, `PANEL_PUBLICO=no`, `SERVICIOS_LLAVE`, `OTA_SECRETO`
+  (los mismos valores que en la API), `SIM_DB_HOST`, `SIM_DB_PORT=6543`, `SIM_DB_NAME=postgres`,
+  `SIM_DB_USER=app_simulador.<referencia>`, `SIM_DB_PASSWORD` y `SIM_DB_SSLMODE=require`. En la API,
+  `SIMULADOR_URL` apunta a `https://hotel-soluna-simulador.vercel.app`.
+
+Para ver el panel del simulador en Vercel:
+
+```bash
+curl -H "Authorization: Bearer <SERVICIOS_LLAVE>" https://hotel-soluna-simulador.vercel.app/panel
+```
+
+Pendiente: correo real (fase 4).
 
 ## API (bloque 1)
 
