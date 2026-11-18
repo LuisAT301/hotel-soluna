@@ -66,14 +66,24 @@ OTA_TOLERANCIA_SEGUNDOS = 300   # avisos con más de 5 minutos se rechazan (repe
 SMTP_HOST = leer("SMTP_HOST", "mailpit")
 SMTP_PORT = int(leer("SMTP_PORT", "1025"))
 CORREO_REMITENTE = leer("CORREO_REMITENTE", "Hotel Soluna <reservas@soluna.test>")
-# Para un servicio de envío real (Brevo, SendGrid, Amazon SES, Resend...): casi
-# todos aceptan SMTP con usuario y contraseña sobre TLS. Mailpit no los necesita.
+# Dominio de los identificadores de mensaje (Message-ID): uno propio del hotel,
+# no el del buzón remitente, que puede ser un Gmail que no envió el correo.
+CORREO_DOMINIO = leer("CORREO_DOMINIO", "soluna.test")
+# Para un servicio de envío real (Brevo en Vercel; también SendGrid, Amazon SES,
+# Resend...): todos aceptan SMTP con usuario y contraseña sobre TLS. Mailpit no los necesita.
 SMTP_USUARIO = leer("SMTP_USUARIO")
 SMTP_PASSWORD = leer("SMTP_PASSWORD")      # admite SMTP_PASSWORD_FILE (secreto de Docker)
 SMTP_TLS = (leer("SMTP_TLS", "no") or "no").lower() in ("si", "sí", "true", "1")
 # "no" en Vercel: lo que corre después de responder puede quedar congelado, así
 # que el correo se envía dentro de la misma solicitud.
 CORREO_SEGUNDO_PLANO = (leer("CORREO_SEGUNDO_PLANO", "si") or "si").lower() in ("si", "sí", "true", "1")
+# "si" con un proveedor real: no se escribe a dominios reservados para pruebas
+# (.test, .example, .invalid...), como los de las cuentas de demostración. Esos
+# envíos rebotarían y dañarían la reputación del remitente.
+CORREO_OMITIR_PRUEBA = (leer("CORREO_OMITIR_PRUEBA", "no") or "no").lower() in ("si", "sí", "true", "1")
+# Tope de correos de bienvenida por hora: el formulario de suscripción es
+# público y, sin límite, serviría para enviar correo masivo a nombre del hotel.
+CORREO_BIENVENIDAS_HORA = int(leer("CORREO_BIENVENIDAS_HORA", "30"))
 
 # Facturación electrónica (datos ficticios del emisor)
 IVA = Decimal("0.13")

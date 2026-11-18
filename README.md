@@ -454,7 +454,41 @@ Para ver el panel del simulador en Vercel:
 curl -H "Authorization: Bearer <SERVICIOS_LLAVE>" https://hotel-soluna-simulador.vercel.app/panel
 ```
 
-Pendiente: correo real (fase 4).
+### Correo real en Vercel (fase 4)
+
+En Docker los correos siguen llegando a Mailpit y no salen de la computadora. En Vercel la API los envía por
+**Brevo**, un servicio de envío con plan gratuito (300 correos al día) que no exige un dominio propio: basta
+con verificar la dirección del remitente. La API no cambia de mecanismo, porque Brevo acepta SMTP con usuario
+y contraseña sobre TLS, igual que los demás proveedores.
+
+- **Sin rebotes:** con `CORREO_OMITIR_PRUEBA=si` no se escribe a dominios reservados para pruebas (`.test`,
+  `.example`, `.invalid`...). Las cuentas de demostración y los huéspedes de la OTA usan esos dominios, y
+  cada rebote dañaría la reputación del remitente. Para ver un correo real, haga la reserva con una cuenta
+  de cliente registrada con una dirección verdadera.
+- **Sin abuso del formulario:** la suscripción es pública. Pasado el tope de `CORREO_BIENVENIDAS_HORA`
+  (30 por defecto), el correo se guarda, pero no se envía la bienvenida; así nadie puede usar el sitio para
+  mandar correo masivo a nombre del hotel.
+- **Contraseña siempre cifrada:** la API verifica el certificado del servidor (STARTTLS) y se niega a enviar
+  la contraseña si `SMTP_TLS` está apagado.
+- **Variables** (producción y vista previa): `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`,
+  `SMTP_TLS=si`, `SMTP_USUARIO` (el usuario SMTP que muestra Brevo), `SMTP_PASSWORD` (la clave SMTP, como
+  variable sensible), `CORREO_REMITENTE` (la dirección verificada en Brevo), `CORREO_DOMINIO` (el dominio del
+  sitio, para los identificadores de mensaje) y `CORREO_OMITIR_PRUEBA=si`.
+
+**Configurar Brevo (una sola vez)**
+
+1. Cree una cuenta gratuita en Brevo.
+2. En *Senders, domains & dedicated IPs > Senders*, agregue la dirección que usará como remitente y
+   confírmela desde el correo que le llega.
+3. En *SMTP & API > SMTP*, anote el **usuario SMTP** (termina en `@smtp-brevo.com`) y pulse
+   **Generate a new SMTP key**.
+4. En Vercel, proyecto `hotel-soluna`, *Settings > Environment Variables*, agregue `SMTP_PASSWORD` con esa
+   clave, marcada como **Sensitive**, para *Production* y *Preview*. La clave nunca se pega en un chat ni
+   en el repositorio.
+
+Si el remitente es una dirección de un correo gratuito (Gmail, Outlook), Brevo puede reescribir el remitente
+para cumplir las reglas de Gmail y Yahoo. El correo llega igual; con un dominio propio verificado en Brevo,
+el remitente se conserva.
 
 ## API (bloque 1)
 
