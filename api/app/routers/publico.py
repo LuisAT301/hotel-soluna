@@ -1,10 +1,12 @@
 """Información pública del sitio web: catálogo de habitaciones y suscripción por correo."""
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from .. import correo
+from .. import config, correo
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol
 from ..esquemas import NuevaSuscripcion, SuscriptorSalida, TipoHabitacionSalida
@@ -47,13 +49,21 @@ def suscribirse(datos: NuevaSuscripcion, tareas: BackgroundTasks,
         registrar(sesion, None, "suscripcion", "suscriptor", nuevo)
     sesion.commit()
 
-    if nuevo is not None:
+    if nuevo is not None and bienvenidas_disponibles(sesion):
         correo.programar(
             tareas, datos.correo, "Bienvenida a las novedades del Hotel Soluna",
             "Hola:\n\nGracias por suscribirse. Le escribiremos con ofertas de temporada, "
             "eventos en Playa Sámara y novedades del hotel.\n\n"
             "Si no pidió esta suscripción, puede ignorar este mensaje.")
     return {"mensaje": "Gracias. Le escribiremos con nuestras novedades."}
+
+
+def bienvenidas_disponibles(sesion: Session) -> bool:
+    """El formulario es público: pasado el tope por hora, se guarda el correo pero
+    no se envía la bienvenida, para que nadie use el sitio como emisor masivo."""
+    hace_una_hora = datetime.now(timezone.utc) - timedelta(hours=1)
+    recientes = sesion.scalar(select(func.count(Suscriptor.id)).where(Suscriptor.creado_en >= hace_una_hora))
+    return recientes <= config.CORREO_BIENVENIDAS_HORA
 
 
 @router.get("/suscripciones", response_model=list[SuscriptorSalida])
