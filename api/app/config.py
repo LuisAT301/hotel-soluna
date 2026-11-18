@@ -66,6 +66,9 @@ OTA_TOLERANCIA_SEGUNDOS = 300   # avisos con más de 5 minutos se rechazan (repe
 SMTP_HOST = leer("SMTP_HOST", "mailpit")
 SMTP_PORT = int(leer("SMTP_PORT", "1025"))
 CORREO_REMITENTE = leer("CORREO_REMITENTE", "Hotel Soluna <reservas@soluna.test>")
+# Dominio de los identificadores de mensaje (Message-ID): uno propio del hotel,
+# no el del buzón remitente, que puede ser un Gmail que no envió el correo.
+CORREO_DOMINIO = leer("CORREO_DOMINIO", "soluna.test")
 # Para un servicio de envío real (Brevo en Vercel; también SendGrid, Amazon SES,
 # Resend...): todos aceptan SMTP con usuario y contraseña sobre TLS. Mailpit no los necesita.
 SMTP_USUARIO = leer("SMTP_USUARIO")

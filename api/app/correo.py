@@ -10,7 +10,7 @@ import logging
 import smtplib
 import ssl
 from email.message import EmailMessage
-from email.utils import formatdate, make_msgid, parseaddr
+from email.utils import formatdate, make_msgid
 
 from . import config
 
@@ -45,13 +45,12 @@ def enviar(destino: str, asunto: str, cuerpo: str) -> None:
     if config.SMTP_USUARIO and not config.SMTP_TLS:
         registro.error("SMTP_TLS está apagado: no se envía la contraseña del correo sin cifrar")
         return
-    remitente = parseaddr(config.CORREO_REMITENTE)[1]
     mensaje = EmailMessage()
     mensaje["From"] = config.CORREO_REMITENTE
     mensaje["To"] = destino
     mensaje["Subject"] = asunto
     mensaje["Date"] = formatdate(localtime=True)
-    mensaje["Message-ID"] = make_msgid(domain=remitente.rsplit("@", 1)[-1] or "soluna.test")
+    mensaje["Message-ID"] = make_msgid(domain=config.CORREO_DOMINIO)
     mensaje.set_content(cuerpo + "\n\nHotel Soluna · Playa Sámara, Guanacaste\n")
     try:
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10) as smtp:

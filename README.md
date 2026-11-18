@@ -472,7 +472,8 @@ y contraseña sobre TLS, igual que los demás proveedores.
   la contraseña si `SMTP_TLS` está apagado.
 - **Variables** (producción y vista previa): `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`,
   `SMTP_TLS=si`, `SMTP_USUARIO` (el usuario SMTP que muestra Brevo), `SMTP_PASSWORD` (la clave SMTP, como
-  variable sensible), `CORREO_REMITENTE` (la dirección verificada en Brevo) y `CORREO_OMITIR_PRUEBA=si`.
+  variable sensible), `CORREO_REMITENTE` (la dirección verificada en Brevo), `CORREO_DOMINIO` (el dominio del
+  sitio, para los identificadores de mensaje) y `CORREO_OMITIR_PRUEBA=si`.
 
 **Configurar Brevo (una sola vez)**
 

@@ -41,7 +41,8 @@ def proveedor(monkeypatch):
     for nombre, valor in {"SMTP_HOST": "smtp-relay.brevo.com", "SMTP_PORT": 587, "SMTP_TLS": True,
                           "SMTP_USUARIO": "cuenta@smtp-brevo.com", "SMTP_PASSWORD": "x",
                           "CORREO_OMITIR_PRUEBA": True,
-                          "CORREO_REMITENTE": "Hotel Soluna <reservas@hotelsoluna.cr>"}.items():
+                          "CORREO_REMITENTE": "Hotel Soluna <reservas@gmail.com>",
+                          "CORREO_DOMINIO": "hotel-soluna-web.vercel.app"}.items():
         monkeypatch.setattr(config, nombre, valor)
     return SMTPFalso.instancias
 
@@ -61,7 +62,7 @@ def test_envia_con_tls_verificado_y_usuario(proveedor):
     assert [p[0] for p in pasos] == ["starttls", "login", "enviar"]
     contexto = pasos[0][1]
     assert contexto.verify_mode == ssl.CERT_REQUIRED and contexto.check_hostname
-    assert pasos[2][2].endswith("@hotelsoluna.cr>")      # Message-ID del dominio del remitente
+    assert pasos[2][2].endswith("@hotel-soluna-web.vercel.app>")   # Message-ID del hotel, no de Gmail
 
 
 def test_no_escribe_a_dominios_de_prueba(proveedor):
