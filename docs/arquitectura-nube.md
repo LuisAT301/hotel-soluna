@@ -198,6 +198,23 @@ En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con 
 máximo de 605 ms por paso. Las 64 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
+### 9.1. Prueba de carga
+
+`carga/locustfile.py` combina visitantes anónimos, clientes que reservan y cancelan, y un monitor que registra
+qué instancia respondió. Se ejecutó contra los dos despliegues el 18 de noviembre de 2026; las corridas en
+Docker se hicieron en el entorno de desarrollo y conviene repetirlas en la computadora de la exposición:
+
+| Destino | Usuarios y duración | Solicitudes | Fallas | Mediana | Máximo | Instancias que respondieron |
+|---|---|---|---|---|---|---|
+| Vercel (producción) | 10 por 40 s | 180 | 0 | 120 ms | 640 ms | 3, creadas por la plataforma |
+| Docker, 3 réplicas | 20 por 30 s | 245 | 0 | 9 ms | 59 ms | 3, con 40 %, 30 % y 30 % de las consultas |
+| Docker, 5 réplicas | 30 por 30 s | No registrado | 0 | No registrado | No registrado | 5, entre 13 % y 26 % cada una, sin reiniciar Nginx |
+
+Las cifras no comparan la velocidad de las plataformas. En Docker, el generador de carga y el sistema
+comparten la máquina, así que la latencia de red es casi nula. En Vercel, cada solicitud cruza Internet hasta
+`iad1`. Lo que sí muestran es el modelo de escalado: en Docker, la capacidad se agrega a mano con más réplicas
+y Nginx las reparte; en Vercel, la plataforma decide cuántas instancias ejecutar según la demanda.
+
 ## Referencias
 
 Eastlake, D., 3rd, & Panitz, A. (1999). *Reserved top level DNS names* (RFC 2606). Internet Engineering
