@@ -31,13 +31,27 @@ nodo local de contingencia en el hotel.
 | Proxy, HTTPS y balanceo | Nginx 1.30 |
 | Interfaz web | HTML, CSS y JavaScript sin librerías |
 | Servicios externos simulados | FastAPI: pasarela de pago, Hacienda y agencia de viajes en línea (OTA) |
-| Correo de prueba | Mailpit |
+| Correo | Mailpit en Docker; Brevo en la nube |
+| Nube | Vercel (sitio, API y simulador), Supabase (PostgreSQL) |
 | Prueba de carga | Locust *(bloque 4)* |
 | Red del hotel | Cisco Packet Tracer *(bloque 5)* |
 
 ## Arquitectura
 
-Los diagramas se encuentran en `docs/diagramas/` *(bloque 6)*. Resumen del prototipo:
+Los diagramas se encuentran en `docs/diagramas/` *(bloque 6)*. El despliegue en la nube, sus decisiones de
+diseño, la seguridad y los puntos únicos de falla se describen en
+[`docs/arquitectura-nube.md`](docs/arquitectura-nube.md).
+
+**En la nube** (lo que usan los huéspedes):
+
+```
+Navegador ──► Sitio (CDN de Vercel) ──► API (Vercel Functions) ──► PostgreSQL (Supabase)
+                     │                       │
+                     └─► Simulador ◄─────────┤   pasarela, Hacienda y OTA (Vercel Functions)
+                                             └─► Brevo (correo real)
+```
+
+**En Docker** (prototipo para demostrar réplicas, balanceo y redes):
 
 ```
 Navegador ──► Nginx (HTTPS, balanceo) ──► API x3 (FastAPI) ──► PostgreSQL
@@ -395,8 +409,18 @@ compártala de nuevo con el equipo por un medio privado.
 
 ## Despliegue en Vercel
 
-La API también se publica en Vercel, conectada a la base de Supabase. La versión de Docker sigue siendo la
-que se usa para las demostraciones de réplicas, balanceo y escalado.
+El sistema está publicado en tres proyectos de Vercel conectados a la base de Supabase. La versión de Docker
+sigue siendo la que se usa para las demostraciones de réplicas, balanceo y escalado.
+
+| Proyecto | Dirección | Contenido |
+|---|---|---|
+| `hotel-soluna-web` | https://hotel-soluna-web.vercel.app | El sitio del hotel: **esta es la dirección para abrir en el navegador** |
+| `hotel-soluna` | https://hotel-soluna.vercel.app | La API (en la raíz responde `Not Found`; pruebe `/api/salud`) |
+| `hotel-soluna-simulador` | https://hotel-soluna-simulador.vercel.app | Pasarela, Hacienda y OTA |
+
+Cada cambio en una rama crea una vista previa de los tres proyectos; producción solo cambia al fusionar en `main`.
+
+### API en Vercel (fase 1)
 
 - **Proyecto:** `hotel-soluna`, con raíz `api/` y el preset de FastAPI (Vercel encuentra `app/main.py`).
   Python 3.13 (`api/.python-version`); duración máxima y archivos excluidos en `api/vercel.json`.
@@ -404,8 +428,8 @@ que se usa para las demostraciones de réplicas, balanceo y escalado.
   entre todas las instancias de la función. Con `DB_MODO_TRANSACCION=si`, la API no guarda conexiones
   abiertas ni usa sentencias preparadas, que ese modo no admite.
 - **Correo:** con `CORREO_SEGUNDO_PLANO=no` se envía dentro de la misma solicitud, porque en Vercel lo que
-  corre después de responder puede quedar congelado. Mientras no haya un servicio de correo real,
-  `SMTP_HOST=ninguno` lo desactiva.
+  corre después de responder puede quedar congelado. El servicio es Brevo (fase 4); con `SMTP_HOST=ninguno`
+  el envío se desactiva.
 - **Variables de entorno** (producción y vista previa): `DB_HOST`, `DB_PORT=6543`, `DB_NAME=postgres`,
   `DB_USER=app_hotel.<referencia>`, `DB_PASSWORD`, `DB_SSLMODE=require`, `DB_MODO_TRANSACCION=si`,
   `CORREO_SEGUNDO_PLANO=no`, `SMTP_HOST`, `JWT_SECRET`, `SERVICIOS_LLAVE` y `OTA_SECRETO`.
@@ -490,6 +514,27 @@ Si el remitente es una dirección de un correo gratuito (Gmail, Outlook), Brevo 
 para cumplir las reglas de Gmail y Yahoo. El correo llega igual; con un dominio propio verificado en Brevo,
 el remitente se conserva.
 
+### Prueba completa en la nube (fase 5)
+
+`pruebas-nube/prueba_vercel.py` recorre el sistema publicado como lo haría un huésped y mide el tiempo de cada
+paso. Comprueba:
+
+- el sitio y sus cabeceras de seguridad;
+- la API y la base de Supabase;
+- reserva, pago aprobado y rechazado, factura y pago repetido;
+- cancelación con reembolso y la protección del panel del simulador.
+
+Cancela al final las reservas que crea, así que puede repetirse antes de la exposición. Solo necesita Python 3.10
+o superior, sin instalar nada:
+
+```bash
+python3 pruebas-nube/prueba_vercel.py
+```
+
+En Windows, use `py pruebas-nube\prueba_vercel.py`. Con la llave de servicios en `SERVICIOS_LLAVE`, también
+comprueba el registro en Hacienda y el aviso firmado de la OTA. Esa llave se comparte por un medio privado,
+nunca por el repositorio.
+
 ## API (bloque 1)
 
 | Método | Ruta | Quién puede usarla |
@@ -558,7 +603,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 48 pruebas automáticas. Cubren:
+`api/tests` contiene 64 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -575,6 +620,8 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - Avisos de la OTA: firma válida, firma falsa, cuerpo alterado, aviso viejo, aviso repetido y sin disponibilidad.
   - Correos de confirmación y cancelación.
 - Página de inicio: catálogo público y suscripción por correo (sin duplicados, correo inválido y acceso solo de gerencia).
+- Simulador protegido (fase 2): panel, OTA y comprobantes exigen la llave; sin documentación pública.
+- Correo real (fase 4): TLS verificado, sin contraseña en claro, sin envíos a dominios de prueba y tope de bienvenidas.
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 
@@ -633,14 +680,16 @@ docker compose logs simulador        # cambie "simulador" por el servicio que fa
 
 - Al cancelar una reserva pagada se reembolsa el dinero, pero todavía no se emite la nota de crédito electrónica que anula la factura.
 - Una reserva en línea que nunca se paga mantiene ocupada la habitación hasta que alguien la cancela; falta un vencimiento automático.
-- El simulador guarda todo en memoria: al reiniciarlo se pierden sus registros (no los del hotel).
-- Los avisos de la OTA llegan a la API por la red interna de Docker. En producción entrarían por Internet a través de Nginx y HTTPS.
+- En Docker, el simulador guarda todo en memoria: al reiniciarlo se pierden sus registros (no los del hotel). En Vercel los guarda en Supabase.
+- En Docker, los avisos de la OTA llegan a la API por la red interna. En Vercel entran por Internet, con HTTPS y firma.
+- Los límites de solicitudes de Nginx (inicio de sesión, tarjetas y suscripciones) aún no están replicados en Vercel.
 
 ## Estado
 
 - [x] **Bloque 1:** base de datos, API con roles, Compose mínimo.
 - [x] **Bloque 2:** Nginx con HTTPS, tres réplicas, límite de intentos, interfaz web.
 - [x] **Bloque 3:** simulador de pasarela, OTA y factura, más Mailpit.
+- [x] **Nube:** base en Supabase; API (fase 1), simulador (fase 2) y sitio (fase 3) en Vercel; correo real con Brevo (fase 4); documentación y prueba completa (fase 5).
 - [ ] **Bloque 4:** respaldos automáticos, restauración en el nodo de contingencia, Locust.
 - [ ] **Bloque 5:** red en Packet Tracer (configuraciones y guía).
 - [ ] **Bloque 6:** diagramas.
@@ -659,6 +708,8 @@ hotel-soluna/
 ├── web/                  sitio del hotel y panel del personal (HTML, CSS y JavaScript)
 │   └── img/              logo e ilustración de la playa
 ├── simulador/            pasarela de pago, Hacienda y OTA simuladas
+├── pruebas-nube/         prueba de punta a punta contra Vercel
+├── docs/                 arquitectura en la nube (y diagramas del bloque 6)
 └── api/
     ├── Dockerfile
     ├── requirements.txt
