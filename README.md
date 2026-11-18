@@ -410,7 +410,19 @@ que se usa para las demostraciones de réplicas, balanceo y escalado.
   `CORREO_SEGUNDO_PLANO=no`, `SMTP_HOST`, `JWT_SECRET`, `SERVICIOS_LLAVE` y `OTA_SECRETO`.
   Las contraseñas se cargan desde el panel de Vercel, nunca en el repositorio.
 
-Pendiente: simulador de pagos (fase 2), sitio web con las reglas de Nginx (fase 3) y correo real (fase 4).
+### Sitio web en Vercel (fase 3)
+
+El sitio (`web/`) es un segundo proyecto, `hotel-soluna-web`, servido desde la red de distribución de
+Vercel: no depende de ninguna computadora, así que deja de ser un punto único de falla. `web/vercel.json`
+cumple el papel de Nginx:
+
+- **Reenvío:** `/api/*` va a la API (`hotel-soluna.vercel.app`). El navegador sigue viendo un solo dominio,
+  así que la política de contenido del sitio (`connect-src 'self'`) no cambia.
+- **Sin caché para la API:** sus respuestas dependen de la sesión de cada usuario.
+- **Cabeceras de seguridad:** las mismas que agrega Nginx, más HSTS, porque el certificado de Vercel es real.
+- En Docker, Nginx no publica `/vercel.json`.
+
+Pendiente: simulador de pagos (fase 2), que también recibirá `/pasarela/tokens`, y correo real (fase 4).
 
 ## API (bloque 1)
 
