@@ -11,7 +11,7 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY simulador.py .
+COPY simulador.py almacen.py ./
 
 RUN useradd --system --uid 10002 --no-create-home simulador
 USER simulador
