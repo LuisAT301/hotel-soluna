@@ -38,7 +38,9 @@ nodo local de contingencia en el hotel.
 
 ## Arquitectura
 
-Los diagramas se encuentran en `docs/diagramas/` *(bloque 6)*. El despliegue en la nube, sus decisiones de
+Los diagramas se encuentran en `docs/diagramas/`. El modelo de datos ya está disponible en PNG, SVG y
+draw.io (editable en https://app.diagrams.net): `modelo-er` (entidad-relación, notación de Chen) y
+`modelo-relacional` (tablas, columnas, claves y restricciones). Los de red y despliegue llegan con el bloque 6. El despliegue en la nube, sus decisiones de
 diseño, la seguridad y los puntos únicos de falla se describen en
 [`docs/arquitectura-nube.md`](docs/arquitectura-nube.md).
 
@@ -810,7 +812,8 @@ hotel-soluna/
 ├── simulador/            pasarela de pago, Hacienda y OTA simuladas
 ├── pruebas-nube/         prueba de punta a punta contra Vercel
 ├── carga/                prueba de carga con Locust (carga.sh la ejecuta)
-├── docs/                 arquitectura en la nube (y diagramas del bloque 6)
+├── docs/                 arquitectura en la nube
+│   └── diagramas/        modelos ER y relacional (PNG, SVG y draw.io)
 └── api/
     ├── Dockerfile
     ├── requirements.txt
