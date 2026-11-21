@@ -463,6 +463,43 @@ compártala de nuevo con el equipo por un medio privado.
   sistema a la vez y la API registra un error de conexión del *pooler*, apague el sistema en las que no se usen.
 - Los respaldos automáticos y la restauración a un punto en el tiempo dependen del plan de pago, por eso
   se mantiene el respaldo propio del bloque 4.
+- Si la base supera los 500 MB, Supabase la pasa a solo lectura: no se podría reservar ni pagar. Para
+  evitarlo hay un mantenimiento automático (siguiente sección).
+
+### Mantenimiento automático de la base
+
+Las consultas de lectura, como las del panel de recepción, no dejan nada guardado en la base. Lo que crece con
+el uso son los registros: la bitácora, el historial de las tareas programadas y las llaves de idempotencia del
+simulador. La función `hotel.mantenimiento()` los recorta con esta política:
+
+| Qué se limpia | Ocupación normal | Ocupación alta (70 % de los 500 MB o más) |
+|---|---|---|
+| Bitácora | Registros de más de 365 días | Registros de más de 90 días |
+| Historial de `pg_cron` (`cron.job_run_details`) | Más de 7 días | Más de 3 días |
+| Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
+
+`pg_cron` la ejecuta en Supabase con dos tareas:
+
+| Tarea | Cuándo | Qué hace |
+|---|---|---|
+| `soluna-vigilar-ocupacion` | Cada hora (minuto 47) | Mide la base; si la ocupación es alta, limpia de inmediato |
+| `soluna-limpieza-diaria` | Todos los días a las 03:17 de Costa Rica | Aplica la retención normal y deja constancia en la bitácora |
+
+Los 365 días siguen el mínimo de 12 meses de conservación de la bitácora de PCI DSS 4.0 (requisito 10.5.1), y
+los 90 días, los 3 meses que esa norma pide mantener disponibles de inmediato. La ocupación alta es una medida
+de emergencia: antes de llegar ahí convendría exportar la bitácora antigua o pasar al plan Pro.
+
+Además, ninguna consulta de la API o del simulador puede ocupar la base más de 15 segundos, ni dejar una
+transacción abierta e inactiva más de 60. La espera legítima más larga es la de un pago, que bloquea su
+reserva mientras la pasarela responde (hasta 12 segundos). Por omisión, PostgreSQL permitiría minutos.
+
+Para revisar el mantenimiento:
+
+- **Panel de Supabase:** *Integrations > Cron > History* muestra el resultado de cada corrida (por ejemplo,
+  `12 MB de 500 MB; borradas: 0 de bitácora...`).
+- **Bitácora del hotel:** gerencia ve una entrada `mantenimiento` por día, con el tamaño de la base y lo borrado.
+- **A mano:** `SELECT hotel.mantenimiento();` en el editor SQL de Supabase. En Docker, donde no hay
+  `pg_cron` ni límite de plan, `docker compose exec db psql -U postgres -d hotel -c "SELECT mantenimiento()"`.
 
 ## Despliegue en Vercel
 
@@ -767,7 +804,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 112 pruebas automáticas. Cubren:
+`api/tests` contiene 118 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -792,6 +829,8 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   ocupada, salida, habitación sucia, limpieza e ingreso), ingresos rechazados, llegada atrasada, salida
   anticipada que libera noches, cambios de habitación, fechas y personas con total recalculado, traslape al
   mover, reglas para huéspedes alojados, reservas pagadas que no cambian de monto y alternativas ofrecidas.
+- Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
+  con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 
