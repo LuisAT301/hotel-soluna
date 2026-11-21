@@ -134,7 +134,8 @@ def buscar_reserva(sesion: Session, codigo: str, usuario: Usuario, bloquear: boo
 
 
 def habitaciones_libres(sesion: Session, entrada: date, salida: date, personas: int,
-                        tipo_id: int | None = None) -> list[Habitacion]:
+                        tipo_id: int | None = None,
+                        excluir_reserva_id: int | None = None) -> list[Habitacion]:
     """Habitaciones en servicio, con capacidad suficiente y sin reservas activas en esas fechas.
 
     Dos estadías se traslapan si cada una empieza antes de que termine la
@@ -143,12 +144,17 @@ def habitaciones_libres(sesion: Session, entrada: date, salida: date, personas: 
     Las habitaciones ocupadas se excluyen con una subconsulta, y el resultado
     se ordena de la más pequeña a la más grande para ofrecer primero la que
     mejor se ajusta al grupo.
+
+    ``excluir_reserva_id`` ignora una reserva al buscar choques: recepción la
+    usa al mover o extender una reserva, que no debe chocar consigo misma.
     """
     ocupadas = select(Reserva.habitacion_id).where(
         Reserva.estado != "cancelada",
         Reserva.fecha_entrada < salida,
         Reserva.fecha_salida > entrada,
     )
+    if excluir_reserva_id is not None:
+        ocupadas = ocupadas.where(Reserva.id != excluir_reserva_id)
     consulta = (
         select(Habitacion)
         .join(TipoHabitacion, Habitacion.tipo_id == TipoHabitacion.id)

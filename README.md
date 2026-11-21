@@ -147,7 +147,7 @@ sesión como `cliente@soluna.test` y opinar sobre `SOL-DEMO01`. Cada estadía ad
 |---|---|
 | Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
 | Cliente | La misma página de inicio, más Mis reservas (paga en línea y consulta su factura) |
-| Recepcionista | Disponibilidad, Reservas, Habitaciones (puede reservar a nombre de un huésped) |
+| Recepcionista | Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
 | Limpieza | Habitaciones (cambia el estado de limpieza) |
 | Mantenimiento | Habitaciones (solo lectura) |
 | Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
@@ -182,6 +182,38 @@ El pie de página muestra qué réplica de la API respondió la última solicitu
   reseñas reales, la sección muestra las de ejemplo; en "Mis reservas", cada estadía cumplida tiene el botón
   **Opinar** con el código ya escrito.
 - **Datos ficticios:** el hotel, el teléfono, la dirección y las reseñas de ejemplo son de demostración.
+
+### Recepción (panel del personal)
+
+Recepción y gerencia ven primero la tarjeta **Recepción**, con cinco vistas:
+
+| Vista | Qué muestra |
+|---|---|
+| Llegadas | Reservas confirmadas cuya estadía ya empezó y que aún no ingresan; las de días anteriores aparecen como "Llegada atrasada" |
+| Salidas | Huéspedes alojados cuya salida es hoy o ya pasó |
+| En casa | Huéspedes alojados ahora mismo |
+| Activas | Pendientes de pago, confirmadas y en curso |
+| Todas | Sin filtro; es la vista que se usa al buscar por código, nombre, correo o número de habitación |
+
+El botón **Gestionar** abre la reserva con sus datos, el estado de limpieza de la habitación, las acciones
+posibles hoy y su historial (tomado de la bitácora, con quién hizo cada cosa):
+
+- **Registrar ingreso (check-in):** la reserva pasa de confirmada a en curso. Se rechaza si está pendiente de
+  pago, si todavía no es la fecha de entrada, si la habitación está fuera de servicio o sin limpiar, o si el
+  huésped anterior no ha registrado su salida.
+- **Registrar salida (check-out):** la reserva pasa a finalizada, la habitación queda sucia para limpieza y el
+  huésped recibe un correo de agradecimiento que lo invita a dejar una reseña. Si se va antes de lo previsto,
+  las noches restantes se liberan y el monto no cambia.
+- **Modificar:** cambia la habitación, las fechas o las personas. Ofrece solo las habitaciones libres, con el
+  total recalculado y la diferencia respecto del actual, y avisa al huésped por correo si cambian las fechas o
+  la habitación. Si el huésped ya ingresó, la entrada no cambia y la habitación nueva debe estar lista; la
+  anterior queda sucia. Una reserva pagada en línea solo admite cambios que no alteran el monto, porque ya
+  tiene factura; las noches adicionales se registran como una reserva nueva.
+- **Cancelar:** la misma cancelación de siempre, con reembolso si hubo pago en línea.
+
+Para probarlo en el sitio de Vercel o en Docker: entre como `recepcion@soluna.test`, reserve desde
+Disponibilidad una habitación con entrada hoy a nombre de un huésped y búsquela en **Llegadas**. Las reservas
+de recepción nacen confirmadas, así que admiten el ingreso de inmediato.
 
 ## Demostraciones del bloque 2
 
@@ -679,6 +711,12 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/suscripciones` | Gerente |
 | GET | `/api/resenas` | Público: promedio, total y las reseñas más recientes |
 | POST | `/api/resenas` | Cuenta activa con una reservación propia ya cumplida (una reseña por reservación) |
+| GET | `/api/gestion/reservas` | Recepcionista, gerente: búsqueda y vistas de recepción (`vista`, `q`) |
+| GET | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: detalle con acciones posibles e historial |
+| GET | `/api/gestion/reservas/{codigo}/alternativas` | Recepcionista, gerente: habitaciones a las que se puede mover, con su total |
+| POST | `/api/gestion/reservas/{codigo}/check-in` | Recepcionista, gerente |
+| POST | `/api/gestion/reservas/{codigo}/check-out` | Recepcionista, gerente |
+| PATCH | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: cambia habitación, fechas o personas |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
@@ -697,6 +735,9 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - La regla `sin_traslape` impide la sobreventa incluso con solicitudes simultáneas.
   - La API usa un usuario con privilegios mínimos: no puede borrar reservas, alterar la bitácora ni cambiar tablas.
 - **Bitácora:** registra quién hizo qué, cuándo y desde qué réplica.
+- **Recepción:** el ingreso, la salida y los cambios bloquean la fila de la reserva (y la de la habitación en
+  el ingreso y la salida), así que dos personas no pueden alojar a dos huéspedes en la misma habitación al mismo
+  tiempo. Los cambios pasan por la misma regla `sin_traslape` que impide la sobreventa.
 - **Secretos:**
   - Se leen de `.env`, que no se sube al repositorio.
   - Llegan a los contenedores como archivos en `/run/secrets`.
@@ -726,7 +767,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 80 pruebas automáticas. Cubren:
+`api/tests` contiene 112 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -747,6 +788,10 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 - Correo real (fase 4): TLS verificado, sin contraseña en claro, sin envíos a dominios de prueba y tope de bienvenidas.
 - Reseñas verificadas: sin sesión, código ajeno o inexistente, estadía futura, cancelada o sin pagar, reseña
   repetida, huésped que crea su cuenta después de reservar, datos inválidos y permisos de la base.
+- Recepción: permisos por rol, vistas y búsqueda (con comodines escapados), el ciclo de un día (habitación
+  ocupada, salida, habitación sucia, limpieza e ingreso), ingresos rechazados, llegada atrasada, salida
+  anticipada que libera noches, cambios de habitación, fechas y personas con total recalculado, traslape al
+  mover, reglas para huéspedes alojados, reservas pagadas que no cambian de monto y alternativas ofrecidas.
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 

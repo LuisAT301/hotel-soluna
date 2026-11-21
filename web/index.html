@@ -17,6 +17,8 @@
   <link rel="stylesheet" href="/estilos.css">
   <!-- defer: el script se ejecuta cuando el HTML terminó de cargarse -->
   <script src="/app.js" defer></script>
+  <!-- Recepción del personal; usa las utilidades de app.js, por eso se carga después -->
+  <script src="/gestion.js" defer></script>
 </head>
 <body data-modo="sitio">
   <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
@@ -192,6 +194,7 @@
 
     <!-- ============================================================ reservar -->
     <!-- Herramientas de trabajo. Cada tarjeta sec-* se muestra según el rol (VISTAS en app.js):
+         recepcion     recepción y gerencia (llegadas, salidas y gestión de reservas, en gestion.js)
          buscar        público, clientes, recepción y gerencia
          reservas      clientes (las suyas), recepción y gerencia
          habitaciones  todo el personal
@@ -203,6 +206,29 @@
         <p>Elija las fechas para ver las habitaciones libres y el precio total. El pago se hace en línea con tarjeta
           y la factura electrónica llega a su correo.</p>
       </div>
+      <!-- Recepción: llegadas, salidas y huéspedes en casa, con búsqueda. "Gestionar" abre
+           el diálogo dlg-gestion con el check-in, el check-out, los cambios y el historial. -->
+      <section id="sec-recepcion" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Recepción</h2>
+          <button id="btn-recargar-recepcion" class="boton claro" type="button">Actualizar</button>
+        </div>
+        <div class="vistas" role="group" aria-label="Reservas que se muestran">
+          <button type="button" data-vista="llegadas" aria-pressed="true">Llegadas</button>
+          <button type="button" data-vista="salidas" aria-pressed="false">Salidas</button>
+          <button type="button" data-vista="en_casa" aria-pressed="false">En casa</button>
+          <button type="button" data-vista="activas" aria-pressed="false">Activas</button>
+          <button type="button" data-vista="todas" aria-pressed="false">Todas</button>
+        </div>
+        <form id="form-recepcion" class="fila" role="search">
+          <label class="crece">Buscar
+            <input name="q" type="search" maxlength="60" placeholder="Código, huésped, correo o número de habitación"></label>
+          <button class="boton" type="submit">Buscar</button>
+        </form>
+        <p id="resumen-recepcion" class="nota"></p>
+        <div id="lista-recepcion"></div>
+      </section>
+
       <section id="sec-buscar" class="tarjeta">
         <h2 class="solo-panel">Disponibilidad</h2>
         <form id="form-buscar" class="fila">
@@ -414,6 +440,41 @@
         <button id="btn-publicar-resena" class="boton" type="submit" value="enviar">Publicar reseña</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Gestión de una reserva en recepción (gestion.js): datos, acciones posibles hoy,
+       formulario de cambios e historial tomado de la bitácora -->
+  <dialog id="dlg-gestion" class="ancho" aria-labelledby="gestion-titulo">
+    <div class="gestion">
+      <div class="encabezado">
+        <h2 id="gestion-titulo">Reserva <code id="gestion-codigo"></code></h2>
+        <span id="gestion-estado"></span>
+      </div>
+      <dl id="gestion-datos" class="ficha"></dl>
+      <p id="error-gestion" class="aviso error" role="alert" hidden></p>
+      <div id="gestion-acciones" class="botones-fila"></div>
+
+      <form id="form-modificar" class="modificar" hidden>
+        <h3>Modificar la reserva</h3>
+        <div class="fila compacta">
+          <label>Entrada <input name="fecha_entrada" type="date" required></label>
+          <label>Salida <input name="fecha_salida" type="date" required></label>
+          <label>Personas <input name="personas" type="number" min="1" max="10" required></label>
+        </div>
+        <label>Habitación <select name="habitacion_id" required></select></label>
+        <p id="nota-modificar" class="nota"></p>
+        <div class="acciones">
+          <button id="btn-descartar-cambios" class="boton claro" type="button">Descartar</button>
+          <button class="boton" type="submit">Guardar cambios</button>
+        </div>
+      </form>
+
+      <h3>Historial</h3>
+      <ol id="gestion-historial" class="historial"></ol>
+      <div class="acciones">
+        <button class="boton" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- Factura electrónica de una reserva pagada, con su estado ante Hacienda -->
