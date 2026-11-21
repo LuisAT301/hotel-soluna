@@ -131,6 +131,16 @@ Todas usan la contraseña definida en `DEMO_PASSWORD` dentro de `.env` (`SolunaD
 
 En la interfaz web, use **Iniciar sesión**. En `/api/docs`, use el botón **Authorize**; el campo *username* es el correo.
 
+**Para probar las reseñas** hace falta una estadía ya cumplida, y el sistema no permite reservar fechas pasadas.
+Este comando crea una para la cuenta de cliente, con el código `SOL-DEMO01` (terminó hace una semana):
+
+```bash
+docker compose exec api python -m app.seed estadia
+```
+
+En la base compartida de Supabase ya existe, así que en modo Supabase y en el sitio de Vercel basta con iniciar
+sesión como `cliente@soluna.test` y opinar sobre `SOL-DEMO01`. Cada estadía admite una sola reseña.
+
 ### Qué ve cada rol en la interfaz
 
 | Rol | Secciones |
@@ -158,7 +168,20 @@ El pie de página muestra qué réplica de la API respondió la última solicitu
   Amazon SES, Resend u otro con SMTP), basta con definir en el servicio `api` de `docker-compose.yml`:
   `SMTP_HOST`, `SMTP_PORT` (normalmente 587), `SMTP_USUARIO`, `SMTP_PASSWORD_FILE` (como secreto de Docker),
   `SMTP_TLS: "si"` y `CORREO_REMITENTE` con un dominio verificado en el servicio.
-- **Datos ficticios:** el hotel, el teléfono, la dirección y las reseñas son de demostración.
+- **Reseñas verificadas:** el botón "Escribir una reseña" pide iniciar sesión y, ya dentro, el código de una
+  reservación propia ya cumplida, una calificación de 1 a 5 estrellas y el comentario. La API solo acepta la
+  reseña si se cumplen cuatro reglas:
+  - la cuenta está activa;
+  - la reservación es del usuario: la hizo con su cuenta, o está a nombre de su mismo correo, como las de
+    recepción o de la agencia cuando el huésped crea su cuenta después;
+  - la estadía está cumplida: no se canceló, no quedó sin pagar y su fecha de salida ya llegó;
+  - esa reservación no tiene ya una reseña.
+
+  Un código inexistente y uno ajeno dan la misma respuesta, para no revelar qué códigos existen. Se publica el
+  nombre con la inicial del apellido ("Ana S.") y el tipo de habitación, nunca el correo. Mientras no haya
+  reseñas reales, la sección muestra las de ejemplo; en "Mis reservas", cada estadía cumplida tiene el botón
+  **Opinar** con el código ya escrito.
+- **Datos ficticios:** el hotel, el teléfono, la dirección y las reseñas de ejemplo son de demostración.
 
 ## Demostraciones del bloque 2
 
@@ -654,6 +677,8 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/tipos-habitacion` | Público: tipos de habitación con su precio más bajo, para la página de inicio |
 | POST | `/api/suscripciones` | Público: guarda un correo para ofertas y novedades (5 por minuto por IP) |
 | GET | `/api/suscripciones` | Gerente |
+| GET | `/api/resenas` | Público: promedio, total y las reseñas más recientes |
+| POST | `/api/resenas` | Cuenta activa con una reservación propia ya cumplida (una reseña por reservación) |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
@@ -701,7 +726,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 64 pruebas automáticas. Cubren:
+`api/tests` contiene 80 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -720,6 +745,8 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 - Página de inicio: catálogo público y suscripción por correo (sin duplicados, correo inválido y acceso solo de gerencia).
 - Simulador protegido (fase 2): panel, OTA y comprobantes exigen la llave; sin documentación pública.
 - Correo real (fase 4): TLS verificado, sin contraseña en claro, sin envíos a dominios de prueba y tope de bienvenidas.
+- Reseñas verificadas: sin sesión, código ajeno o inexistente, estadía futura, cancelada o sin pagar, reseña
+  repetida, huésped que crea su cuenta después de reservar, datos inválidos y permisos de la base.
 
 **Importante:** las pruebas vacían las tablas antes de cada caso, así que nunca deben ejecutarse contra la base de la demostración.
 

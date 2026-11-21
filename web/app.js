@@ -286,6 +286,9 @@ async function cargarReservas() {
     if (cancelable(r)) {
       botones.push(el('button', { clase: 'boton peligro pequeno', type: 'button', onclick: () => intentar(() => cancelar(r)) }, 'Cancelar'));
     }
+    if (sesion.rol === 'cliente' && estadiaCumplida(r)) {
+      botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => abrirResena(r.codigo) }, 'Opinar'));
+    }
     return el('div', { clase: 'botones-fila' }, ...botones);
   };
   $('#lista-reservas').replaceChildren(tabla(
@@ -525,13 +528,96 @@ async function cargarSuscriptores() {
 }
 
 // ---------------------------------------------------------------------
+// Reseñas verificadas
+// Solo opina quien inició sesión y tiene una reservación propia ya cumplida;
+// la API comprueba esas reglas y aquí solo se muestran sus mensajes.
+// ---------------------------------------------------------------------
+const ESTADOS_CUMPLIDOS = ['confirmada', 'en_curso', 'finalizada'];
+
+/** Indica si una reserva ya terminó y se puede reseñar (la API vuelve a comprobarlo). */
+function estadiaCumplida(reserva) {
+  return ESTADOS_CUMPLIDOS.includes(reserva.estado) && reserva.fecha_salida <= fechaISO(new Date());
+}
+
+/** Cinco estrellas de texto: llenas según la calificación y vacías el resto. */
+function textoEstrellas(calificacion) {
+  return '★'.repeat(calificacion) + '☆'.repeat(5 - calificacion);
+}
+
+/** Tarjeta de una reseña real, con el distintivo de estadía verificada. */
+function tarjetaResena(r) {
+  const fecha = new Date(r.creada_en).toLocaleDateString('es-CR', { month: 'long', year: 'numeric' });
+  return el('figure', { clase: 'resena' },
+    el('div', { clase: 'estrellas', 'aria-label': `${r.calificacion} de 5 estrellas` }, textoEstrellas(r.calificacion)),
+    el('blockquote', {}, r.comentario),
+    el('figcaption', {},
+      el('strong', {}, r.autor), ` · Habitación ${r.tipo_habitacion} · ${fecha}`,
+      el('span', { clase: 'verificada' }, 'Estadía verificada')));
+}
+
+/**
+ * Carga las reseñas reales y el promedio. Mientras no exista ninguna, se quedan
+ * las reseñas de ejemplo del HTML, con su nota de demostración.
+ */
+async function cargarResenas() {
+  const { promedio, total, resenas } = await api('/api/resenas');
+  if (!total) return;
+  const valor = Number(promedio);
+  $('#resumen-resenas').replaceChildren(
+    el('span', { clase: 'estrellas', 'aria-hidden': 'true' }, textoEstrellas(Math.round(valor))),
+    el('strong', {}, `${valor.toLocaleString('es-CR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} de 5`),
+    ` en ${total} ${total === 1 ? 'opinión verificada' : 'opiniones verificadas'}`);
+  $('#lista-resenas').replaceChildren(...resenas.map(tarjetaResena));
+  $('#nota-resenas').textContent = 'Cada reseña corresponde a una estadía cumplida en el hotel.';
+}
+
+/**
+ * Abre el formulario de reseña, con el código ya escrito si viene de "Mis reservas".
+ * Sin sesión, primero pide iniciarla y abre el formulario en cuanto entra.
+ */
+function abrirResena(codigo = '') {
+  if (!sesion.token) {
+    abrirEntrar('Inicie sesión para escribir una reseña. Solo pueden opinar huéspedes con una estadía cumplida.',
+      () => abrirResena(codigo));
+    return;
+  }
+  const formulario = $('#form-resena');
+  formulario.reset();
+  formulario.codigo_reserva.value = codigo;
+  $('#error-resena').hidden = true;
+  $('#dlg-resena').showModal();
+}
+
+/** Envía la reseña; si la API la acepta, cierra el formulario y actualiza la sección. */
+async function enviarResena(formulario) {
+  const datos = Object.fromEntries(new FormData(formulario));
+  await api('/api/resenas', {
+    metodo: 'POST',
+    json: {
+      codigo_reserva: datos.codigo_reserva.trim().toUpperCase(),
+      calificacion: Number(datos.calificacion),
+      comentario: datos.comentario.trim(),
+    },
+  });
+  $('#dlg-resena').close();
+  avisar('Gracias por su reseña: ya está publicada en el sitio.');
+  await cargarResenas();
+}
+
+// ---------------------------------------------------------------------
 // Inicio de sesión y registro
 // ---------------------------------------------------------------------
 // false: el diálogo inicia sesión; true: crea una cuenta de cliente
 let modoRegistro = false;
+// Acción que se ejecuta al iniciar sesión, si se pidió entrar para hacer algo (por ejemplo, opinar)
+let alEntrar = null;
 
-/** Abre el diálogo de inicio de sesión; `nota` explica por qué se pidió (por ejemplo, para reservar). */
-function abrirEntrar(nota) {
+/**
+ * Abre el diálogo de inicio de sesión; `nota` explica por qué se pidió (por ejemplo, para reservar)
+ * y `despues`, si se indica, se ejecuta en cuanto la sesión quede iniciada.
+ */
+function abrirEntrar(nota, despues = null) {
+  alEntrar = despues;
   modoRegistro = false;
   actualizarModoEntrar();
   $('#form-entrar').reset();
@@ -566,6 +652,12 @@ async function enviarEntrar(formulario) {
   $('#dlg-entrar').close();
   avisar(`Bienvenido, ${token.nombre}.`);
   mostrarVista();
+  // Si se pidió entrar para hacer algo, se retoma
+  if (alEntrar) {
+    const accion = alEntrar;
+    alEntrar = null;
+    accion();
+  }
   // El personal pasa a su panel: se empieza desde arriba
   if (document.body.dataset.modo === 'panel') window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -610,6 +702,21 @@ document.addEventListener('DOMContentLoaded', () => {
     suscribir(evento.target);
   });
   cargarTiposHabitacion().catch(() => { /* se queda el texto de respaldo del HTML */ });
+  cargarResenas().catch(() => { /* se quedan las reseñas de ejemplo del HTML */ });
+
+  $('#btn-resena').addEventListener('click', () => abrirResena());
+  $('#form-resena').addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    const boton = $('#btn-publicar-resena');
+    boton.disabled = true;
+    $('#error-resena').hidden = true;
+    enviarResena(evento.target)
+      .catch((error) => {
+        $('#error-resena').textContent = error.message;
+        $('#error-resena').hidden = false;
+      })
+      .finally(() => { boton.disabled = false; });
+  });
 
   $('#btn-entrar').addEventListener('click', () => abrirEntrar());
   $('#btn-salir').addEventListener('click', () => { cerrarSesion(); avisar('Sesión cerrada.'); });

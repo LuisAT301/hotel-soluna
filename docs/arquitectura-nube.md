@@ -127,6 +127,7 @@ la mediana de respuesta de cada paso, medida desde fuera de la región, se mantu
 | Intercepción | TLS en todos los tramos: navegador, base de datos y SMTP, con verificación de certificado |
 | Panel del simulador expuesto | `PANEL_PUBLICO=no`: panel, OTA y comprobantes exigen la llave de servicios |
 | Uso del sitio para enviar correo masivo | Tope de correos de bienvenida por hora |
+| Reseñas falsas o de terceros | Solo opina el titular de una estadía cumplida, con sesión iniciada y una reseña por reservación |
 | Rebotes que dañan al remitente | No se escribe a dominios reservados para pruebas (Eastlake & Panitz, 1999) |
 | Ataques desde el navegador | CSP, HSTS, `X-Frame-Options`, `nosniff` y política de referencia en el sitio |
 
@@ -195,7 +196,7 @@ factura aceptada, pago repetido, cancelación con reembolso, protección del pan
 servicios, el registro en Hacienda y el aviso firmado de la OTA. Cancela al final las reservas que crea.
 
 En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con una mediana de 227 ms y un
-máximo de 605 ms por paso. Las 64 pruebas automáticas de `api/tests` cubren, además, los casos que no
+máximo de 605 ms por paso. Las 80 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
 ### 9.1. Prueba de carga

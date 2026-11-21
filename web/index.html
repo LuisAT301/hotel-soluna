@@ -160,10 +160,14 @@
       <div class="bloque-encabezado">
         <p class="antetitulo">Reseñas</p>
         <h2>Lo que dicen nuestros huéspedes</h2>
-        <p class="calificacion"><span class="estrellas" aria-hidden="true">★★★★★</span>
+        <p id="resumen-resenas" class="calificacion"><span class="estrellas" aria-hidden="true">★★★★★</span>
           <strong>4,8 de 5</strong> en 312 opiniones</p>
+        <!-- Abre el formulario; sin sesión, primero pide iniciarla -->
+        <p><button id="btn-resena" class="boton" type="button">Escribir una reseña</button></p>
       </div>
-      <div class="resenas">
+      <!-- app.js reemplaza estas reseñas de ejemplo por las reales (/api/resenas) en cuanto exista
+           al menos una; si la API no responde, se quedan las de ejemplo -->
+      <div id="lista-resenas" class="resenas">
         <figure class="resena">
           <div class="estrellas" aria-label="5 de 5 estrellas">★★★★★</div>
           <blockquote>La playa está a dos minutos caminando y el mar es tan tranquilo que nuestros hijos nadaron todos
@@ -183,7 +187,7 @@
           <figcaption><strong>Laura K.</strong> · Toronto, Canadá · agosto 2026</figcaption>
         </figure>
       </div>
-      <p class="nota centrada">Reseñas de demostración del prototipo académico.</p>
+      <p id="nota-resenas" class="nota centrada">Reseñas de demostración del prototipo académico.</p>
     </section>
 
     <!-- ============================================================ reservar -->
@@ -378,6 +382,36 @@
       <div class="acciones">
         <button class="boton claro" type="button" data-cerrar>Cancelar</button>
         <button id="btn-pagar" class="boton" type="submit" value="enviar">Pagar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reseña verificada: requiere sesión y el código de una reservación propia ya cumplida.
+       Las estrellas son botones de opción (radio) en orden 5 a 1; el CSS los muestra de 1 a 5
+       y colorea la elegida y las anteriores. -->
+  <dialog id="dlg-resena">
+    <form id="form-resena" method="dialog">
+      <h2>Escribir una reseña</h2>
+      <p class="nota">Solo pueden opinar los huéspedes con una estadía cumplida. Escriba el código de su
+        reservación, el que recibió por correo (por ejemplo, SOL-7KQ2MX).</p>
+      <label>Código de reservación <input name="codigo_reserva" required maxlength="20" autocomplete="off"
+        pattern="\s*[Ss][Oo][Ll]-[A-Za-z0-9]{6}\s*" placeholder="SOL-XXXXXX" class="codigo"></label>
+      <fieldset class="estrellas-entrada">
+        <legend>Calificación</legend>
+        <div class="opciones-estrellas">
+          <input type="radio" id="estrella-5" name="calificacion" value="5" required><label for="estrella-5" title="Excelente"><span class="sr">5 estrellas</span><span aria-hidden="true">★</span></label>
+          <input type="radio" id="estrella-4" name="calificacion" value="4"><label for="estrella-4" title="Muy buena"><span class="sr">4 estrellas</span><span aria-hidden="true">★</span></label>
+          <input type="radio" id="estrella-3" name="calificacion" value="3"><label for="estrella-3" title="Buena"><span class="sr">3 estrellas</span><span aria-hidden="true">★</span></label>
+          <input type="radio" id="estrella-2" name="calificacion" value="2"><label for="estrella-2" title="Regular"><span class="sr">2 estrellas</span><span aria-hidden="true">★</span></label>
+          <input type="radio" id="estrella-1" name="calificacion" value="1"><label for="estrella-1" title="Mala"><span class="sr">1 estrella</span><span aria-hidden="true">★</span></label>
+        </div>
+      </fieldset>
+      <label>Su opinión <textarea name="comentario" required minlength="10" maxlength="1000" rows="5"
+        placeholder="¿Qué le gustó de su estadía? ¿Qué podríamos mejorar?"></textarea></label>
+      <p id="error-resena" class="aviso error" hidden></p>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cancelar</button>
+        <button id="btn-publicar-resena" class="boton" type="submit" value="enviar">Publicar reseña</button>
       </div>
     </form>
   </dialog>

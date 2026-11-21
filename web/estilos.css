@@ -176,10 +176,30 @@ main { max-width: var(--ancho); margin: 0 auto; padding: 24px 16px 8px; }
 /* Reseñas */
 .calificacion { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--texto) !important; }
 .estrellas { color: var(--sol-oscuro); letter-spacing: .1em; }
-.resenas { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.resenas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
 .resena { margin: 0; background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio); padding: 22px; display: flex; flex-direction: column; gap: 12px; }
 .resena blockquote { margin: 0; font-family: var(--f-titulo); font-size: 1.12rem; line-height: 1.45; }
 .resena figcaption { margin-top: auto; font-size: .9rem; color: var(--gris); }
+/* Distintivo de las reseñas reales: provienen de una estadía comprobada */
+.verificada { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: .75rem;
+  background: var(--laguna-claro); color: var(--laguna); font-weight: 600; }
+
+/* Formulario de reseña: estrellas como botones de opción ocultos. Van de 5 a 1 en
+   el HTML y se muestran al revés (row-reverse); así "~" colorea la estrella elegida
+   y todas las anteriores, y el paso del mouse anticipa la calificación. */
+.estrellas-entrada { border: 0; margin: 0; padding: 0; }
+.estrellas-entrada legend { padding: 0; margin-bottom: 4px; font-size: .85rem; color: var(--gris); }
+.opciones-estrellas { display: inline-flex; flex-direction: row-reverse; gap: 2px; }
+.opciones-estrellas input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.opciones-estrellas label { display: inline-block; font-size: 2rem; line-height: 1; color: var(--borde); cursor: pointer; }
+.opciones-estrellas input:checked ~ label,
+.opciones-estrellas label:hover,
+.opciones-estrellas label:hover ~ label { color: var(--sol-oscuro); }
+.opciones-estrellas input:focus-visible + label { outline: 3px solid var(--sol); outline-offset: 2px; border-radius: 4px; }
+textarea { font: inherit; color: var(--texto); padding: 8px 10px; border: 1px solid var(--borde); border-radius: 8px;
+  background: var(--blanco); resize: vertical; width: 100%; }
+textarea:focus { outline: 2px solid var(--laguna); outline-offset: 1px; }
+input.codigo { text-transform: uppercase; letter-spacing: .05em; }
 
 /* Reservar */
 .bloque-reservar { padding-top: 56px; }

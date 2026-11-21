@@ -185,6 +185,47 @@ class NuevaSuscripcion(BaseModel):
         return v.lower()
 
 
+class NuevaResena(BaseModel):
+    """Reseña que envía un huésped con sesión iniciada."""
+    codigo_reserva: str = Field(max_length=20, description="Por ejemplo, SOL-7KQ2MX")
+    calificacion: int = Field(ge=1, le=5)
+    comentario: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("codigo_reserva")
+    @classmethod
+    def codigo_normalizado(cls, v: str) -> str:
+        """Acepta el código en minúsculas y con espacios alrededor; exige el formato SOL-XXXXXX."""
+        v = v.strip().upper()
+        if not (v.startswith("SOL-") and v[4:].isalnum() and len(v) == 10):
+            raise ValueError("El código de reservación tiene el formato SOL-XXXXXX")
+        return v
+
+    @field_validator("comentario")
+    @classmethod
+    def sin_espacios_sobrantes(cls, v: str) -> str:
+        """Quita espacios al inicio y al final; un comentario de puros espacios no llega a 10 caracteres."""
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("Escriba al menos 10 caracteres")
+        return v
+
+
+class ResenaSalida(BaseModel):
+    """Reseña tal como se publica: sin correo ni apellido completo del autor."""
+    autor: str                     # nombre y la inicial del apellido, por ejemplo "Ana M."
+    calificacion: int
+    comentario: str
+    tipo_habitacion: str
+    creada_en: datetime
+
+
+class ResumenResenas(BaseModel):
+    """Promedio, cantidad total y las reseñas más recientes, para la página de inicio."""
+    promedio: Decimal | None       # None mientras no haya reseñas
+    total: int
+    resenas: list[ResenaSalida]
+
+
 class SuscriptorSalida(BaseModel):
     """Suscriptor en la lista que consulta gerencia."""
     model_config = ConfigDict(from_attributes=True)
