@@ -1,4 +1,12 @@
-"""Formatos de entrada y salida de la API (validados por Pydantic)."""
+"""Formatos de entrada y salida de la API (validados por Pydantic).
+
+Cada clase describe un cuerpo JSON. En la entrada, Pydantic rechaza con un
+error 422 cualquier dato con tipo, longitud o formato incorrecto antes de que
+llegue a la lógica de la API. En la salida, define qué campos se devuelven,
+de modo que nunca se filtre por accidente una columna interna (por ejemplo,
+el hash de la contraseña). ``from_attributes=True`` permite construir la
+respuesta directamente desde un objeto de la base de datos.
+"""
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -12,11 +20,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 if "test" in email_validator.SPECIAL_USE_DOMAIN_NAMES:
     email_validator.SPECIAL_USE_DOMAIN_NAMES.remove("test")
 
+# Valores admitidos: cualquier otro se rechaza con 422
 Rol = Literal["cliente", "recepcionista", "limpieza", "mantenimiento", "gerente"]
 EstadoLimpieza = Literal["sucia", "en_limpieza", "limpia", "inspeccionada"]
 
 
 class Token(BaseModel):
+    """Respuesta del inicio de sesión: el token y los datos que usa la interfaz."""
     access_token: str
     token_type: str = "bearer"
     rol: Rol
@@ -24,6 +34,7 @@ class Token(BaseModel):
 
 
 class RegistroCliente(BaseModel):
+    """Datos para que un cliente cree su cuenta desde el sitio web."""
     nombre: str = Field(min_length=2, max_length=120)
     correo: EmailStr
     contrasena: str = Field(min_length=8, max_length=128)
@@ -31,14 +42,17 @@ class RegistroCliente(BaseModel):
     @field_validator("correo")
     @classmethod
     def a_minusculas(cls, v: str) -> str:
+        """Guarda el correo en minúsculas: Ana@x.com y ana@x.com son la misma cuenta."""
         return v.lower()
 
 
 class NuevoUsuario(RegistroCliente):
+    """Cuenta que crea gerencia, con el rol que tendrá."""
     rol: Rol
 
 
 class UsuarioSalida(BaseModel):
+    """Datos públicos de una cuenta (sin el hash de la contraseña)."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -49,6 +63,7 @@ class UsuarioSalida(BaseModel):
 
 
 class HabitacionSalida(BaseModel):
+    """Habitación con su tipo y estado, para recepción y limpieza."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -61,10 +76,12 @@ class HabitacionSalida(BaseModel):
 
 
 class CambioLimpieza(BaseModel):
+    """Nuevo estado de limpieza que registra el personal."""
     estado: EstadoLimpieza
 
 
 class Disponible(BaseModel):
+    """Habitación libre para las fechas consultadas, con el precio de la estadía."""
     habitacion_id: int
     numero: str
     tipo: str
@@ -74,6 +91,7 @@ class Disponible(BaseModel):
 
 
 class NuevaReserva(BaseModel):
+    """Solicitud de reserva. Las fechas se validan en la ruta (salida posterior a la entrada)."""
     habitacion_id: int
     fecha_entrada: date
     fecha_salida: date
@@ -85,6 +103,7 @@ class NuevaReserva(BaseModel):
 
 
 class ReservaSalida(BaseModel):
+    """Reserva tal como la ve el huésped o el personal, con el desglose del IVA."""
     model_config = ConfigDict(from_attributes=True)
 
     codigo: str
@@ -105,12 +124,14 @@ class ReservaSalida(BaseModel):
 
 
 class SolicitudPago(BaseModel):
+    """Pago de una reserva con el token que la pasarela le dio al navegador."""
     # Token de un solo uso que entrega la pasarela al navegador. La API
     # nunca recibe el número de tarjeta ni el código de seguridad.
     token: str = Field(pattern=r"^tok_[A-Za-z0-9_-]{8,64}$")
 
 
 class FacturaSalida(BaseModel):
+    """Factura electrónica con su estado ante Hacienda."""
     model_config = ConfigDict(from_attributes=True)
 
     clave: str
@@ -124,6 +145,7 @@ class FacturaSalida(BaseModel):
 
 
 class PagoSalida(BaseModel):
+    """Resultado de un pago aprobado: la reserva confirmada, el cobro y la factura."""
     reserva: ReservaSalida
     transaccion: str
     marca: str | None
@@ -153,15 +175,18 @@ class TipoHabitacionSalida(BaseModel):
 
 
 class NuevaSuscripcion(BaseModel):
+    """Correo que deja un visitante en el formulario de novedades."""
     correo: EmailStr
 
     @field_validator("correo")
     @classmethod
     def a_minusculas(cls, v: str) -> str:
+        """Evita suscripciones duplicadas que solo difieren en mayúsculas."""
         return v.lower()
 
 
 class SuscriptorSalida(BaseModel):
+    """Suscriptor en la lista que consulta gerencia."""
     model_config = ConfigDict(from_attributes=True)
 
     correo: str
@@ -171,6 +196,7 @@ class SuscriptorSalida(BaseModel):
 
 
 class BitacoraSalida(BaseModel):
+    """Entrada de la bitácora de auditoría."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int

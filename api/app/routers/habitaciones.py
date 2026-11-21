@@ -1,4 +1,11 @@
-"""Habitaciones y estado de limpieza (RF-12 en lectura, RF-13)."""
+"""Habitaciones y estado de limpieza (RF-12 en lectura, RF-13).
+
+Rutas:
+  GET   /api/habitaciones                    todas las habitaciones (personal).
+  PATCH /api/habitaciones/{id}/limpieza      cambia el estado de limpieza.
+
+El ciclo de limpieza es: sucia, en_limpieza, limpia e inspeccionada.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +19,7 @@ router = APIRouter(prefix="/api/habitaciones", tags=["habitaciones"])
 
 
 def _salida(h: Habitacion) -> HabitacionSalida:
+    """Convierte la habitación de la base al formato de respuesta, con su tipo y capacidad."""
     return HabitacionSalida(
         id=h.id,
         numero=h.numero,
@@ -25,6 +33,7 @@ def _salida(h: Habitacion) -> HabitacionSalida:
 
 @router.get("", response_model=list[HabitacionSalida])
 def listar(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(requiere_rol(*PERSONAL))):
+    """Las habitaciones ordenadas por número; solo para el personal."""
     habitaciones = sesion.scalars(select(Habitacion).order_by(Habitacion.numero)).all()
     return [_salida(h) for h in habitaciones]
 
@@ -36,6 +45,7 @@ def cambiar_limpieza(
     sesion: Session = Depends(obtener_sesion),
     usuario: Usuario = Depends(requiere_rol("limpieza", "recepcionista", "gerente")),
 ):
+    """RF-13: registra el nuevo estado de limpieza y deja en la bitácora el estado anterior y el nuevo."""
     habitacion = sesion.get(Habitacion, habitacion_id)
     if habitacion is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Habitación no encontrada")

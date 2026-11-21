@@ -42,13 +42,21 @@ pendientes_de_cancelar: list[tuple[str, dict]] = []
 
 class Respuesta:
     def __init__(self, estado: int, cabeceras, cuerpo: bytes):
+        """Guarda el código HTTP, las cabeceras y el cuerpo decodificado como texto."""
         self.estado, self.cabeceras, self.texto = estado, cabeceras, cuerpo.decode("utf-8", "replace")
 
     def json(self):
+        """Interpreta el cuerpo como JSON (diccionario vacío si viene vacío)."""
         return json.loads(self.texto) if self.texto else {}
 
 
 def pedir(metodo: str, url: str, json_=None, formulario=None, cabeceras=None) -> tuple[Respuesta, float]:
+    """Hace una solicitud HTTP y devuelve la respuesta y su duración en milisegundos.
+
+    Envía el cuerpo como JSON (``json_``) o como formulario (``formulario``). Los errores HTTP
+    (4xx y 5xx) no lanzan excepción: se devuelven como respuesta, porque varias
+    comprobaciones esperan justamente un error (401, 402, 409).
+    """
     datos, tipo = None, None
     if json_ is not None:
         datos, tipo = json.dumps(json_).encode(), "application/json"
@@ -66,6 +74,9 @@ def pedir(metodo: str, url: str, json_=None, formulario=None, cabeceras=None) ->
 
 
 def paso(nombre: str, condicion: bool, ms: float, detalle: str = "") -> bool:
+    """Anota el resultado de una comprobación, lo imprime con su tiempo y devuelve si fue
+    correcta.
+    """
     resultados.append((nombre, condicion, ms, detalle))
     marca = "OK   " if condicion else "FALLA"
     print(f"{marca} {nombre:<52} {ms:7.0f} ms  {detalle}")
@@ -73,6 +84,9 @@ def paso(nombre: str, condicion: bool, ms: float, detalle: str = "") -> bool:
 
 
 def sesion(correo: str) -> dict:
+    """Inicia sesión con una cuenta de demostración; si falla, termina la prueba (lo demás
+    depende de ella).
+    """
     r, ms = pedir("POST", f"{SITIO}/api/auth/login", formulario={"username": correo, "password": DEMO})
     if not paso(f"Inicio de sesión ({correo})", r.estado == 200, ms, str(r.estado)):
         raise SystemExit(terminar())
@@ -89,6 +103,9 @@ def tokenizar(numero: str) -> str | None:
 
 
 def terminar() -> int:
+    """Cancela las reservas que quedaron abiertas, imprime el resumen con la mediana y el máximo
+    de los tiempos y devuelve 1 si alguna comprobación falló.
+    """
     for codigo, cabecera in pendientes_de_cancelar:
         pedir("POST", f"{SITIO}/api/reservas/{codigo}/cancelar", cabeceras=cabecera)
     fallas = [n for n, ok, _, _ in resultados if not ok]
@@ -102,6 +119,11 @@ def terminar() -> int:
 
 
 def main() -> int:
+    """Recorre el sistema en el orden en que lo usa un huésped y devuelve el código de salida.
+
+    Cada reserva que crea se anota en ``pendientes_de_cancelar``; ``terminar`` las cancela
+    al final, aunque una comprobación intermedia falle.
+    """
     print(f"Sitio: {SITIO}\nSimulador: {SIMULADOR}\n")
 
     # 1. Sitio estático en la red de distribución de Vercel
@@ -129,6 +151,9 @@ def main() -> int:
         return terminar()
 
     def reservar(habitacion: dict) -> str | None:
+        """Reserva una habitación para las fechas de la prueba y la anota para cancelarla al
+        final.
+        """
         r, ms = pedir("POST", f"{SITIO}/api/reservas", cabeceras=cliente, json_={
             "habitacion_id": habitacion["habitacion_id"], "fecha_entrada": str(entrada),
             "fecha_salida": str(salida), "personas": 2})

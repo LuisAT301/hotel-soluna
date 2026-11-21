@@ -12,6 +12,8 @@ INSERT INTO tipos_habitacion (nombre, capacidad, descripcion) VALUES
     ('suite',    4, 'Dos ambientes, terraza frente al mar');
 
 -- Precios por noche en dólares. Temporada alta: diciembre a abril.
+-- La lista de valores se une con los tipos por su nombre, para no depender
+-- de qué id les asignó la base.
 INSERT INTO tarifas (tipo_id, temporada, precio_noche)
 SELECT t.id, v.temporada, v.precio
 FROM tipos_habitacion t
@@ -23,6 +25,7 @@ JOIN (VALUES
 
 -- Piso 1: 20 estándar (101-120); piso 2: 18 superior (201-218);
 -- piso 3: 8 suites (301-308). Total: 46 habitaciones.
+-- generate_series produce los números de cada piso; cada uno se guarda como texto.
 INSERT INTO habitaciones (numero, tipo_id, piso)
 SELECT n::text, (SELECT id FROM tipos_habitacion WHERE nombre = 'estándar'), 1
 FROM generate_series(101, 120) AS n;

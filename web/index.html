@@ -1,4 +1,12 @@
 <!doctype html>
+<!--
+  Hotel Soluna: página única que sirve a dos públicos.
+  - Sitio público (data-modo="sitio"): portada, ubicación, habitaciones,
+    amenidades, reseñas, reservas en línea, novedades y contacto.
+  - Panel del personal (data-modo="panel"): solo las herramientas de trabajo.
+  app.js cambia el modo y muestra u oculta secciones según el rol de la sesión.
+  Las clases solo-sitio y solo-panel marcan lo que pertenece a cada modo.
+-->
 <html lang="es">
 <head>
   <meta charset="utf-8">
@@ -7,11 +15,15 @@
   <meta name="description" content="Hotel Soluna: 46 habitaciones a pasos de Playa Sámara, Guanacaste, Costa Rica. Reserve en línea.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/estilos.css">
+  <!-- defer: el script se ejecuta cuando el HTML terminó de cargarse -->
   <script src="/app.js" defer></script>
 </head>
 <body data-modo="sitio">
+  <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
   <a class="saltar" href="#contenido">Saltar al contenido</a>
 
+  <!-- ============================================================ barra superior -->
+  <!-- Marca, menú de secciones (se pliega en pantallas angostas) y botones de sesión -->
   <header class="barra">
     <a class="marca" href="#inicio" aria-label="Hotel Soluna, ir al inicio">
       <img src="/img/logo.svg" alt="" width="40" height="40">
@@ -175,6 +187,11 @@
     </section>
 
     <!-- ============================================================ reservar -->
+    <!-- Herramientas de trabajo. Cada tarjeta sec-* se muestra según el rol (VISTAS en app.js):
+         buscar        público, clientes, recepción y gerencia
+         reservas      clientes (las suyas), recepción y gerencia
+         habitaciones  todo el personal
+         usuarios, bitacora y suscriptores  solo gerencia -->
     <section id="reservar" class="bloque bloque-reservar">
       <div class="bloque-encabezado solo-sitio">
         <p class="antetitulo">Reservaciones</p>
@@ -190,6 +207,7 @@
           <label>Personas <input id="buscar-personas" type="number" name="personas" min="1" max="10" value="2" required></label>
           <button class="boton" type="submit">Buscar</button>
         </form>
+        <!-- app.js inserta aquí una tarjeta por tipo de habitación libre -->
         <div id="resultados"></div>
       </section>
 
@@ -198,6 +216,7 @@
           <h2 id="titulo-reservas">Reservas</h2>
           <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
         </div>
+        <!-- Tabla con botones Pagar, Factura y Cancelar según el estado de cada reserva -->
         <div id="lista-reservas"></div>
       </section>
 
@@ -206,11 +225,13 @@
           <h2>Habitaciones</h2>
           <button id="btn-recargar-habitaciones" class="boton claro" type="button">Actualizar</button>
         </div>
+        <!-- Tabla con el estado de limpieza; quien puede cambiarlo ve un selector -->
         <div id="lista-habitaciones"></div>
       </section>
 
       <section id="sec-usuarios" class="tarjeta" hidden>
         <h2>Cuentas del personal</h2>
+        <!-- Gerencia crea una cuenta por empleado, con su rol (sin cuentas compartidas) -->
         <form id="form-usuario" class="fila">
           <label>Nombre <input name="nombre" required minlength="2"></label>
           <label>Correo <input name="correo" type="email" required></label>
@@ -298,6 +319,11 @@
       Respondió la réplica <code id="replica">…</code></p>
   </footer>
 
+  <!-- ============================================================ diálogos -->
+  <!-- Ventanas modales (elemento dialog). method="dialog" evita que el formulario
+       recargue la página: app.js intercepta el envío y llama a la API. -->
+
+  <!-- Inicio de sesión o creación de una cuenta de cliente (el mismo formulario en dos modos) -->
   <dialog id="dlg-entrar">
     <form id="form-entrar" method="dialog">
       <h2 id="titulo-entrar">Iniciar sesión</h2>
@@ -313,6 +339,7 @@
     </form>
   </dialog>
 
+  <!-- Recepción o gerencia completan los datos del huésped antes de reservar a su nombre -->
   <dialog id="dlg-huesped">
     <form id="form-huesped" method="dialog">
       <h2>Datos del huésped</h2>
@@ -326,6 +353,9 @@
     </form>
   </dialog>
 
+  <!-- Pago con tarjeta. Los datos de la tarjeta se envían a la pasarela (/pasarela/tokens),
+       nunca a la API del hotel; a la API solo llega el token de un solo uso.
+       Los atributos autocomplete cc-* permiten al navegador ofrecer tarjetas guardadas. -->
   <dialog id="dlg-pago">
     <form id="form-pago" method="dialog">
       <h2>Pagar reserva <span id="pago-codigo"></span></h2>
@@ -352,6 +382,7 @@
     </form>
   </dialog>
 
+  <!-- Factura electrónica de una reserva pagada, con su estado ante Hacienda -->
   <dialog id="dlg-factura">
     <form method="dialog">
       <h2>Factura electrónica</h2>

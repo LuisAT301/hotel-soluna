@@ -11,6 +11,8 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 -- ---------------------------------------------------------------------
 -- Usuarios del sistema (personal y clientes) con su rol
 -- ---------------------------------------------------------------------
+-- Los id se generan solos (GENERATED ALWAYS AS IDENTITY): nadie puede
+-- escribir un id a mano, lo que evita choques entre réplicas.
 CREATE TABLE usuarios (
     id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     correo            text        NOT NULL UNIQUE,
@@ -88,6 +90,8 @@ CREATE TABLE reservas (
     ) WHERE (estado <> 'cancelada')
 );
 
+-- Índices: el primero acelera "mis reservas" de un cliente; el segundo, las
+-- búsquedas de disponibilidad y los listados por rango de fechas.
 CREATE INDEX reservas_cliente_idx ON reservas (cliente_id);
 CREATE INDEX reservas_fechas_idx  ON reservas (fecha_entrada, fecha_salida);
 
@@ -104,4 +108,5 @@ CREATE TABLE bitacora (
     detalle    jsonb       NOT NULL DEFAULT '{}'::jsonb
 );
 
+-- Ordenado de lo más reciente a lo más antiguo, como la consulta gerencia
 CREATE INDEX bitacora_fecha_idx ON bitacora (fecha DESC);

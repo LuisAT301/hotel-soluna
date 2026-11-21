@@ -4,6 +4,10 @@ Cada valor sensible puede llegar de dos formas:
   - NOMBRE_FILE: ruta a un archivo con el valor (secretos de Docker en /run/secrets).
   - NOMBRE:      el valor directo (útil solo para pruebas locales).
 Así ninguna contraseña queda escrita en el código ni en el repositorio.
+
+Los valores se leen una sola vez, al importar el módulo. Si falta una
+variable obligatoria, la API no arranca y el error dice cuál falta: es
+preferible a descubrirlo a mitad de una solicitud.
 """
 import os
 from decimal import Decimal
@@ -12,6 +16,11 @@ from zoneinfo import ZoneInfo
 
 
 def leer(nombre: str, defecto: str | None = None) -> str | None:
+    """Devuelve el valor de una variable, con prioridad para NOMBRE_FILE.
+
+    Si existe NOMBRE_FILE, lee el archivo al que apunta (sin espacios ni saltos
+    de línea al final); si no, usa NOMBRE; si tampoco existe, ``defecto``.
+    """
     ruta = os.getenv(f"{nombre}_FILE")
     if ruta:
         return Path(ruta).read_text(encoding="utf-8").strip()
@@ -19,12 +28,16 @@ def leer(nombre: str, defecto: str | None = None) -> str | None:
 
 
 def obligatorio(nombre: str) -> str:
+    """Como ``leer``, pero detiene el arranque si la variable falta o está vacía."""
     valor = leer(nombre)
     if not valor:
         raise RuntimeError(f"Falta la variable {nombre} (o {nombre}_FILE)")
     return valor
 
 
+# ---------------------------------------------------------------------
+# Base de datos
+# ---------------------------------------------------------------------
 DB_HOST = leer("DB_HOST", "db")
 DB_PORT = int(leer("DB_PORT", "5432"))
 DB_NAME = leer("DB_NAME", "hotel")
@@ -41,6 +54,11 @@ DB_POOL_EXTRA = int(leer("DB_POOL_EXTRA", "5"))
 # guarda conexiones abiertas ni usa sentencias preparadas (ese modo no las admite).
 DB_MODO_TRANSACCION = (leer("DB_MODO_TRANSACCION", "no") or "no").lower() in ("si", "sí", "true", "1")
 
+# ---------------------------------------------------------------------
+# Sesiones y seguridad
+# ---------------------------------------------------------------------
+# Clave con la que se firman los tokens de sesión; quien la conozca podría
+# fabricar tokens válidos, por eso es un secreto obligatorio.
 JWT_SECRET = obligatorio("JWT_SECRET")
 JWT_ALGORITMO = "HS256"
 JWT_MINUTOS = int(leer("JWT_MINUTOS", "30"))
@@ -49,6 +67,7 @@ JWT_MINUTOS = int(leer("JWT_MINUTOS", "30"))
 MAX_INTENTOS = int(leer("MAX_INTENTOS", "5"))
 MINUTOS_BLOQUEO = int(leer("MINUTOS_BLOQUEO", "15"))
 
+# Zona horaria del hotel: define "hoy" para las reservas y la fecha de las facturas
 ZONA_HORARIA = ZoneInfo("America/Costa_Rica")
 
 # ---------------------------------------------------------------------
@@ -85,7 +104,9 @@ CORREO_OMITIR_PRUEBA = (leer("CORREO_OMITIR_PRUEBA", "no") or "no").lower() in (
 # público y, sin límite, serviría para enviar correo masivo a nombre del hotel.
 CORREO_BIENVENIDAS_HORA = int(leer("CORREO_BIENVENIDAS_HORA", "30"))
 
+# ---------------------------------------------------------------------
 # Facturación electrónica (datos ficticios del emisor)
+# ---------------------------------------------------------------------
 IVA = Decimal("0.13")
 EMISOR_NOMBRE = "Hotel Soluna S.A."
 EMISOR_CEDULA = "3101999999"   # cédula jurídica ficticia

@@ -1,4 +1,12 @@
-"""Contraseñas (Argon2id) y tokens de acceso (JWT)."""
+"""Contraseñas (Argon2id) y tokens de acceso (JWT).
+
+- Contraseñas: nunca se guardan en texto plano. Se guarda su hash Argon2id,
+  que incluye una sal aleatoria y es costoso de calcular a propósito, para que
+  un atacante con una copia de la base no pueda probar millones de claves.
+- Sesiones: al iniciar sesión, la API entrega un token JWT firmado con
+  JWT_SECRET. El navegador lo envía en cada solicitud y la API comprueba su
+  firma y su vencimiento sin guardar estado (sirve en cualquier réplica).
+"""
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -19,10 +27,18 @@ _HASH_FALSO = hasher.hash("contrasena-que-no-existe")
 
 
 def hashear(contrasena: str) -> str:
+    """Devuelve el hash Argon2id de una contraseña, con su sal y parámetros incluidos."""
     return hasher.hash(contrasena)
 
 
 def verificar(hash_guardado: str | None, contrasena: str) -> bool:
+    """Indica si la contraseña corresponde al hash guardado.
+
+    Si el usuario no existe (``hash_guardado`` es None), igual se verifica
+    contra un hash falso: así la respuesta tarda lo mismo y nadie puede saber,
+    midiendo el tiempo, si un correo está registrado. En ese caso el resultado
+    siempre es False.
+    """
     try:
         return hasher.verify(hash_guardado or _HASH_FALSO, contrasena) and hash_guardado is not None
     except (VerifyMismatchError, InvalidHashError):
@@ -30,6 +46,13 @@ def verificar(hash_guardado: str | None, contrasena: str) -> bool:
 
 
 def crear_token(usuario_id: int, rol: str, nombre: str) -> str:
+    """Crea el token de sesión (JWT) de un usuario.
+
+    Contenido: el identificador (sub), el rol y el nombre, que la interfaz usa
+    para mostrar el menú correcto; la fecha de emisión (iat) y la de
+    vencimiento (exp), JWT_MINUTOS después. Va firmado con HMAC-SHA256: si
+    alguien altera cualquier dato, la firma deja de coincidir.
+    """
     ahora = datetime.now(timezone.utc)
     datos = {
         "sub": str(usuario_id),
@@ -42,5 +65,9 @@ def crear_token(usuario_id: int, rol: str, nombre: str) -> str:
 
 
 def leer_token(token: str) -> dict:
+    """Comprueba la firma y el vencimiento del token y devuelve su contenido.
+
+    Lanza ``jwt.PyJWTError`` si el token está alterado, vencido o mal formado.
+    """
     # Se fija el algoritmo para impedir tokens firmados con "none" u otro
     return jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITMO])

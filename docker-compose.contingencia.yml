@@ -6,11 +6,13 @@
 # No se usa directamente: lo maneja contingencia.sh (activar, simulacro, volver).
 # =====================================================================
 services:
+  # La base local recibe, además, las copias de Supabase y el script que las restaura
   db:
     volumes:
       - respaldos:/respaldos:ro            # copias hechas por el servicio "respaldo"
       - ./respaldo:/scripts:ro             # restaurar.sh
 
+  # La API trabaja con la copia restaurada en lugar de la base de Docker habitual
   api:
     environment:
       DB_NAME: hotel_contingencia          # la copia restaurada, con el esquema "hotel"

@@ -26,6 +26,9 @@ os.environ.setdefault("SIMULADOR_URL", f"http://127.0.0.1:{PUERTO_SIMULADOR}")
 
 
 def _admin():
+    """Conexión como administrador (postgres), solo para preparar y revisar la base; la API nunca
+    la usa.
+    """
     return psycopg.connect(
         # ADMIN_DB_HOST/ADMIN_DB_PORT: para cuando la API pasa por un pooler que solo
         # conoce al usuario de la API (prueba del modo Vercel con PgBouncer)
@@ -52,6 +55,7 @@ def base_limpia():
 
 @pytest.fixture
 def cliente_http():
+    """Cliente de pruebas que llama a la API dentro del mismo proceso, sin abrir un puerto."""
     from app.main import app
     with TestClient(app) as c:
         yield c
@@ -59,11 +63,13 @@ def cliente_http():
 
 @pytest.fixture
 def admin_db():
+    """Conexión de administrador para que una prueba consulte la base directamente."""
     with _admin() as c:
         yield c
 
 
 def iniciar_sesion(cliente_http, correo, contrasena=None):
+    """Inicia sesión con una cuenta y devuelve la cabecera Authorization lista para usar."""
     r = cliente_http.post("/api/auth/login", data={
         "username": correo, "password": contrasena or os.environ["DEMO_PASSWORD"]})
     assert r.status_code == 200, r.text

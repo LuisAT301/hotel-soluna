@@ -1,3 +1,5 @@
+# Archivos que no se copian a la imagen de la API: pruebas, cachés de Python y
+# herramientas de desarrollo. La imagen queda más pequeña y sin código innecesario.
 tests/
 __pycache__/
 *.pyc

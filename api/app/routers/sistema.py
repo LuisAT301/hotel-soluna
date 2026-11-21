@@ -1,4 +1,9 @@
-"""Salud del servicio y bitácora."""
+"""Salud del servicio y bitácora.
+
+Rutas:
+  GET /api/salud      estado de la API y de la base de datos (sin iniciar sesión).
+  GET /api/bitacora   últimos registros de auditoría (solo gerencia).
+"""
 import logging
 
 from fastapi import APIRouter, Depends, Response, status
@@ -12,12 +17,18 @@ from ..modelos import RegistroBitacora, Usuario
 
 router = APIRouter(prefix="/api", tags=["sistema"])
 registro = logging.getLogger("soluna.salud")
+# Evita repetir el mismo error en el registro en cada consulta de salud
 _aviso_esquema_dado = False
 
 
 @router.get("/salud")
 def salud(respuesta: Response, sesion: Session = Depends(obtener_sesion)):
-    """Lo consultan el healthcheck de Docker y Nginx. Indica qué réplica respondió."""
+    """Lo consultan el healthcheck de Docker y Nginx. Indica qué réplica respondió.
+
+    Responde 200 con "ok" si la base responde y tiene todas las tablas;
+    "degradado" si le faltan tablas, y 503 si no hay conexión. Docker usa ese
+    503 para marcar la réplica como no saludable y Nginx deja de enviarle tráfico.
+    """
     global _aviso_esquema_dado
     try:
         sesion.execute(text("SELECT 1"))
@@ -44,6 +55,10 @@ def bitacora(
     sesion: Session = Depends(obtener_sesion),
     _: Usuario = Depends(requiere_rol("gerente")),
 ):
-    """RNF-12: solo gerencia consulta la bitácora."""
+    """RNF-12: solo gerencia consulta la bitácora.
+
+    Devuelve los registros más recientes primero; ``limite`` se acota a 500
+    para que una consulta no pueda traer la tabla completa.
+    """
     consulta = select(RegistroBitacora).order_by(RegistroBitacora.id.desc()).limit(min(limite, 500))
     return sesion.scalars(consulta).all()

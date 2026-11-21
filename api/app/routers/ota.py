@@ -3,6 +3,12 @@
 La OTA no inicia sesión: cada aviso viaja firmado con HMAC-SHA256 y un
 secreto que solo conocen la OTA y el hotel. La firma cubre la fecha y el
 cuerpo completo, así que un aviso alterado o repetido horas después se rechaza.
+
+Ruta:
+  POST /api/integraciones/ota/reservas
+    Cabeceras: X-OTA-Fecha (hora UNIX) y X-OTA-Firma ("sha256=" + firma).
+    201 reserva creada; 200 la referencia ya existía; 401 firma no válida;
+    409 no hay habitaciones libres del tipo pedido.
 """
 import hashlib
 import hmac
@@ -24,6 +30,7 @@ from .reservas import (calcular_total, correo_confirmacion, habitaciones_libres,
 
 router = APIRouter(prefix="/api/integraciones/ota", tags=["integraciones"])
 
+# Un único error para firma ausente, vencida o alterada: no se indica cuál falló
 _FIRMA_INVALIDA = HTTPException(status.HTTP_401_UNAUTHORIZED, "Firma del aviso no válida")
 
 
@@ -32,6 +39,16 @@ async def verificar_firma(
     x_ota_fecha: str = Header(description="Segundos desde 1970 (hora UNIX) en que se firmó el aviso"),
     x_ota_firma: str = Header(description='"sha256=" + HMAC-SHA256 de "fecha.cuerpo"'),
 ) -> None:
+    """Dependencia que rechaza con 401 todo aviso sin una firma válida y reciente.
+
+    Algoritmo:
+      1. La fecha debe estar a menos de OTA_TOLERANCIA_SEGUNDOS de la hora
+         actual: un aviso capturado no puede reenviarse más tarde (repetición).
+      2. Se recalcula la firma: HMAC-SHA256 con el secreto compartido sobre
+         "fecha." seguido del cuerpo exacto, byte por byte.
+      3. Se compara con la recibida en tiempo constante.
+    Como la fecha forma parte de lo firmado, cambiarla invalida la firma.
+    """
     try:
         fecha = int(x_ota_fecha)
     except ValueError:
@@ -54,6 +71,9 @@ def recibir_reserva(datos: ReservaOTA, respuesta: Response, tareas: BackgroundTa
 
     Si la OTA reenvía la misma referencia, se devuelve la reserva ya creada (200)
     en lugar de duplicarla.
+
+    La reserva nace confirmada (la OTA cobra al huésped), sin cliente ni
+    usuario del personal asociado, y guarda la referencia de la agencia.
     """
     existente = sesion.scalar(select(Reserva).where(Reserva.referencia_externa == datos.referencia))
     if existente is not None:
@@ -61,6 +81,7 @@ def recibir_reserva(datos: ReservaOTA, respuesta: Response, tareas: BackgroundTa
         return salida_reserva(existente)
 
     validar_fechas(datos.fecha_entrada, datos.fecha_salida)
+    # El esquema ReservaOTA solo admite los tres tipos existentes, así que el tipo siempre se encuentra
     tipo = sesion.scalar(select(TipoHabitacion).where(TipoHabitacion.nombre == datos.tipo))
     if datos.personas > tipo.capacidad:
         raise HTTPException(422, f"El tipo {tipo.nombre} admite como máximo {tipo.capacidad} personas")
@@ -98,6 +119,7 @@ def recibir_reserva(datos: ReservaOTA, respuesta: Response, tareas: BackgroundTa
     if reserva is None:
         raise HTTPException(status.HTTP_409_CONFLICT, f"No hay habitaciones {datos.tipo} libres en esas fechas")
 
+    # usuario None: la acción la hizo un sistema externo, no una persona con cuenta
     registrar(sesion, None, "reserva_ota", "reserva", reserva.codigo, referencia=datos.referencia,
               habitacion=reserva.habitacion_id, entrada=str(datos.fecha_entrada), salida=str(datos.fecha_salida))
     sesion.commit()

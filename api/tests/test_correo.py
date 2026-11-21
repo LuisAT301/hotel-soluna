@@ -14,22 +14,28 @@ class SMTPFalso:
     instancias: list["SMTPFalso"] = []
 
     def __init__(self, host, puerto, timeout):
+        """Registra la instancia para que la prueba pueda revisar los pasos."""
         self.host, self.puerto, self.pasos = host, puerto, []
         SMTPFalso.instancias.append(self)
 
     def __enter__(self):
+        """Permite usarlo con ``with`` como el smtplib.SMTP real."""
         return self
 
     def __exit__(self, *_):
+        """No suprime excepciones, igual que el original."""
         return False
 
     def starttls(self, context=None):
+        """Anota el cifrado y el contexto TLS recibido."""
         self.pasos.append(("starttls", context))
 
     def login(self, usuario, contrasena):
+        """Anota el inicio de sesión (sin guardar la contraseña)."""
         self.pasos.append(("login", usuario))
 
     def send_message(self, mensaje):
+        """Anota el destinatario y el Message-ID del mensaje enviado."""
         self.pasos.append(("enviar", mensaje["To"], mensaje["Message-ID"]))
 
 
@@ -53,10 +59,14 @@ def proveedor(monkeypatch):
     ("x@ulacit.ac.cr", False), ("x@notexample.com", False),
 ])
 def test_reconoce_dominios_de_prueba(destino, de_prueba):
+    """Distingue dominios reservados (.test, example.com...) de dominios reales."""
     assert correo.es_de_prueba(destino) is de_prueba
 
 
 def test_envia_con_tls_verificado_y_usuario(proveedor):
+    """Con proveedor real: STARTTLS con certificado verificado, inicio de sesión y Message-ID del
+    dominio del hotel.
+    """
     enviar("huesped@gmail.com", "Confirmación", "Hola")
     pasos = proveedor[0].pasos
     assert [p[0] for p in pasos] == ["starttls", "login", "enviar"]
@@ -66,11 +76,13 @@ def test_envia_con_tls_verificado_y_usuario(proveedor):
 
 
 def test_no_escribe_a_dominios_de_prueba(proveedor):
+    """Con proveedor real, no se intenta enviar a un dominio .test."""
     enviar("cliente@soluna.test", "Confirmación", "Hola")
     assert proveedor == []
 
 
 def test_no_envia_la_contrasena_sin_cifrar(proveedor, monkeypatch):
+    """Con usuario SMTP y TLS apagado, no se envía nada."""
     monkeypatch.setattr(config, "SMTP_TLS", False)
     enviar("huesped@gmail.com", "Confirmación", "Hola")
     assert proveedor == []
@@ -86,6 +98,7 @@ def test_mailpit_sigue_recibiendo_dominios_de_prueba(proveedor, monkeypatch):
 
 
 def test_tope_de_bienvenidas_por_hora(cliente_http, admin_db, correos, monkeypatch):
+    """Pasado el tope por hora, las suscripciones se guardan pero no reciben bienvenida."""
     monkeypatch.setattr(config, "CORREO_BIENVENIDAS_HORA", 2)
     for i in range(4):
         r = cliente_http.post("/api/suscripciones", json={"correo": f"persona{i}@correo.test"})

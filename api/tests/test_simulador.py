@@ -14,6 +14,7 @@ LLAVE = {"Authorization": f"Bearer {os.environ['SERVICIOS_LLAVE']}"}
 
 @pytest.fixture(scope="module")
 def simulador_protegido():
+    """Levanta el simulador como en Vercel (PANEL_PUBLICO=no), en memoria y en otro puerto."""
     carpeta = Path(__file__).resolve().parents[2] / "simulador"
     entorno = {**os.environ, "PANEL_PUBLICO": "no", "API_URL": "http://127.0.0.1:9"}
     entorno.pop("SIM_DB_HOST", None)  # en memoria: aquí solo importa la protección
@@ -33,6 +34,7 @@ def simulador_protegido():
 
 
 def test_panel_y_ota_piden_la_llave(simulador_protegido):
+    """Panel, envío de la OTA y consulta de comprobantes exigen la llave de servicios."""
     url = simulador_protegido
     assert httpx.get(f"{url}/panel").status_code == 401
     assert httpx.post(f"{url}/ota/enviar").status_code == 401
@@ -41,11 +43,13 @@ def test_panel_y_ota_piden_la_llave(simulador_protegido):
 
 
 def test_sin_documentacion_publica(simulador_protegido):
+    """La documentación interactiva no se publica."""
     assert httpx.get(f"{simulador_protegido}/docs").status_code == 404
     assert httpx.get(f"{simulador_protegido}/openapi.json").status_code == 404
 
 
 def test_tokenizar_sigue_abierto_para_el_navegador(simulador_protegido):
+    """Tokenizar no exige llave: el navegador del cliente debe poder hacerlo."""
     r = httpx.post(f"{simulador_protegido}/pasarela/tokens", json={
         "numero": "4242 4242 4242 4242", "titular": "Cliente", "vencimiento": "12/39", "cvv": "123"})
     assert r.status_code == 201 and r.json()["ultimos4"] == "4242"

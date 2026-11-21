@@ -5,6 +5,7 @@
 // =====================================================================
 'use strict';
 
+// Nombres visibles de los valores que usa la API
 const ROLES = {
   cliente: 'Cliente',
   recepcionista: 'Recepción',
@@ -35,19 +36,23 @@ const VISTAS = {
   gerente: ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
 };
 
+// Formato de dinero en dólares con convenciones de Costa Rica, y atajo para buscar elementos
 const dinero = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'USD' });
 const $ = (selector) => document.querySelector(selector);
 
 // ---------------------------------------------------------------------
 // Sesión (se guarda solo en esta pestaña y se borra al cerrarla)
 // ---------------------------------------------------------------------
+// Al cargar la página se recupera la sesión de la pestaña, si existía
 let sesion = { token: null, rol: null, nombre: null };
 try { sesion = { ...sesion, ...JSON.parse(sessionStorage.getItem('soluna') || '{}') }; } catch { /* sin almacenamiento */ }
 
+/** Guarda la sesión en sessionStorage: sobrevive a recargar la página, pero se borra al cerrar la pestaña. */
 function guardarSesion() {
   try { sessionStorage.setItem('soluna', JSON.stringify(sesion)); } catch { /* sin almacenamiento */ }
 }
 
+/** Olvida el token y vuelve a mostrar la vista pública. */
 function cerrarSesion() {
   sesion = { token: null, rol: null, nombre: null };
   try { sessionStorage.removeItem('soluna'); } catch { /* sin almacenamiento */ }
@@ -57,6 +62,15 @@ function cerrarSesion() {
 // ---------------------------------------------------------------------
 // Llamadas a la API (siempre por la misma dirección: Nginx las reparte)
 // ---------------------------------------------------------------------
+/**
+ * Llama a la API y devuelve el JSON de la respuesta, o lanza un Error con un mensaje legible.
+ * - Agrega el token de sesión si lo hay y envía el cuerpo como JSON o como formulario.
+ * - Muestra en el pie la réplica que respondió (cabecera X-Replica).
+ * - Un 401 con sesión abierta significa que el token venció: cierra la sesión.
+ * - Un 429 viene del límite de solicitudes de Nginx.
+ * @param {string} ruta Ruta relativa (/api/... o /pasarela/...): siempre el mismo origen del sitio.
+ * @param {{metodo?: string, json?: object, formulario?: object}} opciones
+ */
 async function api(ruta, { metodo = 'GET', json, formulario } = {}) {
   const opciones = { method: metodo, headers: {} };
   if (sesion.token) opciones.headers.Authorization = `Bearer ${sesion.token}`;
@@ -82,6 +96,10 @@ async function api(ruta, { metodo = 'GET', json, formulario } = {}) {
   return datos;
 }
 
+/**
+ * Convierte la respuesta de error de la API en un texto para el usuario.
+ * FastAPI envía un texto en `detail`, o una lista de errores de validación (422) que se resume campo por campo.
+ */
 function textoError(datos, codigo) {
   if (datos && typeof datos.detail === 'string') return datos.detail;
   if (datos && Array.isArray(datos.detail)) {
@@ -93,6 +111,11 @@ function textoError(datos, codigo) {
 // ---------------------------------------------------------------------
 // Utilidades de interfaz
 // ---------------------------------------------------------------------
+/**
+ * Crea un elemento HTML con atributos e hijos, sin usar innerHTML.
+ * `clase` se asigna a className, los atributos `on...` se registran como eventos y los hijos
+ * que no son nodos se insertan como texto, así ningún dato de la API se interpreta como HTML.
+ */
 function el(etiqueta, atributos = {}, ...hijos) {
   const nodo = document.createElement(etiqueta);
   for (const [clave, valor] of Object.entries(atributos)) {
@@ -106,6 +129,7 @@ function el(etiqueta, atributos = {}, ...hijos) {
   return nodo;
 }
 
+/** Arma una tabla con encabezados y filas; si no hay filas, muestra `textoVacio`. */
 function tabla(columnas, filas, textoVacio) {
   if (!filas.length) return el('p', { clase: 'vacio' }, textoVacio);
   return el('div', { clase: 'tabla-contenedor' },
@@ -114,11 +138,13 @@ function tabla(columnas, filas, textoVacio) {
       el('tbody', {}, ...filas.map((fila) => el('tr', {}, ...fila.map((celda) => el('td', {}, celda)))))));
 }
 
+/** Etiqueta de color para un estado; el color lo da la clase CSS con el mismo nombre. */
 function etiquetaEstado(valor, nombres) {
   return el('span', { clase: `estado ${valor}` }, nombres[valor] || valor);
 }
 
 let temporizadorAviso;
+/** Muestra un aviso arriba de la página durante siete segundos (`tipo`: exito o error). */
 function avisar(mensaje, tipo = 'exito') {
   const aviso = $('#aviso');
   aviso.textContent = mensaje;
@@ -128,10 +154,12 @@ function avisar(mensaje, tipo = 'exito') {
   temporizadorAviso = setTimeout(() => { aviso.hidden = true; }, 7000);
 }
 
+// Conversión de fechas: el formulario usa AAAA-MM-DD y la interfaz muestra DD/MM/AAAA
 const fechaISO = (fecha) => fecha.toLocaleDateString('en-CA'); // AAAA-MM-DD en hora local
 const fechaCorta = (iso) => iso.split('-').reverse().join('/');
 
 // Ejecuta una acción mostrando cualquier error en el aviso
+/** Ejecuta una acción asíncrona y muestra cualquier error en el aviso, en vez de perderlo en la consola. */
 async function intentar(accion) {
   try { await accion(); } catch (error) { avisar(error.message, 'error'); }
 }
@@ -139,6 +167,11 @@ async function intentar(accion) {
 // ---------------------------------------------------------------------
 // Vista según el rol
 // ---------------------------------------------------------------------
+/**
+ * Muestra solo las secciones del rol actual y recarga sus datos.
+ * El personal ve el modo "panel" (sin la página de inicio); el público y los clientes, el sitio completo.
+ * Ocultar secciones es solo comodidad: los permisos reales los aplica la API en cada ruta.
+ */
 function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
   document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
@@ -161,8 +194,15 @@ function mostrarVista() {
 // ---------------------------------------------------------------------
 // Disponibilidad y reservas
 // ---------------------------------------------------------------------
+// Última búsqueda hecha, para repetirla después de reservar, cancelar o cambiar de sesión
 let ultimaBusqueda = null;
 
+/**
+ * Consulta la disponibilidad y muestra una tarjeta por tipo de habitación.
+ * La API devuelve cada habitación libre; aquí se agrupan por tipo y se guardan sus ids,
+ * para reservar la primera libre del tipo elegido. Se recuerda la búsqueda para repetirla
+ * después de reservar o cancelar.
+ */
 async function buscar(parametros) {
   ultimaBusqueda = parametros;
   const lista = await api(`/api/disponibilidad?${new URLSearchParams(parametros)}`);
@@ -191,6 +231,11 @@ async function buscar(parametros) {
     ))));
 }
 
+/**
+ * Empieza una reserva desde el botón "Reservar".
+ * Sin sesión pide iniciarla; un cliente reserva de inmediato a su nombre; el personal
+ * primero completa el nombre y el correo del huésped en un diálogo.
+ */
 function iniciarReserva(grupo, parametros) {
   const datos = {
     habitacion_id: grupo.ids[0],
@@ -214,8 +259,10 @@ function iniciarReserva(grupo, parametros) {
   $('#dlg-huesped').showModal();
 }
 
+// Datos de la reserva que el personal está completando en el diálogo del huésped
 let reservaPendiente = null;
 
+/** Crea la reserva, actualiza la búsqueda y la lista, y abre el pago si quedó pendiente. */
 async function confirmarReserva(datos) {
   const reserva = await api('/api/reservas', { metodo: 'POST', json: datos });
   avisar(`Reserva ${reserva.codigo} creada: habitación ${reserva.habitacion}, ${ESTADOS[reserva.estado].toLowerCase()}.`);
@@ -224,6 +271,7 @@ async function confirmarReserva(datos) {
   if (reserva.estado === 'pendiente_pago') abrirPago(reserva);
 }
 
+/** Lista las reservas con los botones que permite su estado: pagar, ver factura y cancelar. */
 async function cargarReservas() {
   const reservas = await api('/api/reservas');
   const cancelable = (r) => ['pendiente_pago', 'confirmada'].includes(r.estado);
@@ -256,6 +304,7 @@ async function cargarReservas() {
     'Todavía no hay reservas.'));
 }
 
+/** Pide confirmación y cancela la reserva; si estaba pagada, la API hace el reembolso. */
 async function cancelar(reserva) {
   const { codigo } = reserva;
   const pregunta = reserva.tiene_factura
@@ -273,8 +322,10 @@ async function cancelar(reserva) {
 // La tarjeta se envía a la pasarela (/pasarela/tokens), que devuelve un
 // token de un solo uso; a la API del hotel solo llega ese token.
 // ---------------------------------------------------------------------
+// Reserva que se está pagando en el diálogo de pago
 let reservaPorPagar = null;
 
+/** Abre el diálogo de pago con el desglose de subtotal, IVA y total. */
 function abrirPago(reserva) {
   reservaPorPagar = reserva;
   $('#form-pago').reset();
@@ -286,6 +337,11 @@ function abrirPago(reserva) {
   $('#dlg-pago').showModal();
 }
 
+/**
+ * Paga una reserva en dos pasos, sin que la tarjeta pase por la API del hotel:
+ * 1. envía la tarjeta a la pasarela (/pasarela/tokens) y recibe un token de un solo uso;
+ * 2. envía solo ese token a la API, que cobra, confirma la reserva y emite la factura.
+ */
 async function pagar(formulario) {
   const tarjeta = Object.fromEntries(new FormData(formulario));
   const { token } = await api('/pasarela/tokens', { metodo: 'POST', json: tarjeta });
@@ -297,6 +353,7 @@ async function pagar(formulario) {
   await cargarReservas();
 }
 
+/** Muestra la factura electrónica de la reserva con su estado ante Hacienda. */
 async function verFactura(reserva) {
   const f = await api(`/api/reservas/${encodeURIComponent(reserva.codigo)}/factura`);
   $('#factura-reserva').textContent = reserva.codigo;
@@ -313,6 +370,7 @@ async function verFactura(reserva) {
 // ---------------------------------------------------------------------
 // Habitaciones y limpieza
 // ---------------------------------------------------------------------
+/** Lista las habitaciones; quien puede cambiar la limpieza ve un selector en lugar de la etiqueta. */
 async function cargarHabitaciones() {
   const habitaciones = await api('/api/habitaciones');
   const editable = ['limpieza', 'recepcionista', 'gerente'].includes(sesion.rol);
@@ -328,6 +386,7 @@ async function cargarHabitaciones() {
     'No hay habitaciones registradas.'));
 }
 
+/** Selector del estado de limpieza que guarda el cambio en cuanto se elige otra opción. */
 function selectorLimpieza(h) {
   const selector = el('select', { 'aria-label': `Estado de limpieza de la habitación ${h.numero}` },
     ...Object.entries(LIMPIEZA).map(([valor, texto]) => el('option', { value: valor }, texto)));
@@ -342,6 +401,7 @@ function selectorLimpieza(h) {
 // ---------------------------------------------------------------------
 // Gerencia: usuarios y bitácora
 // ---------------------------------------------------------------------
+/** Lista las cuentas (gerencia) con el botón para desactivar las demás. */
 async function cargarUsuarios() {
   const usuarios = await api('/api/usuarios');
   $('#lista-usuarios').replaceChildren(tabla(
@@ -358,6 +418,7 @@ async function cargarUsuarios() {
     'No hay cuentas.'));
 }
 
+/** Pide confirmación y desactiva una cuenta. */
 async function desactivar(usuario) {
   if (!window.confirm(`¿Desactivar la cuenta de ${usuario.nombre}?`)) return;
   await api(`/api/usuarios/${usuario.id}/desactivar`, { metodo: 'POST' });
@@ -365,6 +426,7 @@ async function desactivar(usuario) {
   await cargarUsuarios();
 }
 
+/** Muestra los últimos 50 registros de la bitácora, con la réplica que atendió cada acción. */
 async function cargarBitacora() {
   const registros = await api('/api/bitacora?limite=50');
   $('#lista-bitacora').replaceChildren(tabla(
@@ -396,6 +458,7 @@ function olaDecorativa() {
   return svg;
 }
 
+/** Arma las tarjetas de tipos de habitación de la página de inicio con los datos de la API. */
 async function cargarTiposHabitacion() {
   const tipos = await api('/api/tipos-habitacion');
   if (!tipos.length) return;
@@ -419,6 +482,11 @@ function prepararBusqueda(capacidad) {
   setTimeout(() => $('#buscar-entrada').focus({ preventScroll: true }), 400);
 }
 
+/**
+ * Envía el correo del formulario de novedades.
+ * Valida el formato en el navegador antes de enviarlo y desactiva el botón mientras
+ * espera, para evitar envíos repetidos.
+ */
 async function suscribir(formulario) {
   const mensaje = $('#msg-suscripcion');
   const campo = $('#suscripcion-correo');
@@ -445,6 +513,7 @@ async function suscribir(formulario) {
 }
 
 // Gerencia: correos suscritos desde la página de inicio
+/** Lista los correos suscritos (gerencia). */
 async function cargarSuscriptores() {
   const lista = await api('/api/suscripciones');
   $('#total-suscriptores').textContent = lista.length
@@ -458,8 +527,10 @@ async function cargarSuscriptores() {
 // ---------------------------------------------------------------------
 // Inicio de sesión y registro
 // ---------------------------------------------------------------------
+// false: el diálogo inicia sesión; true: crea una cuenta de cliente
 let modoRegistro = false;
 
+/** Abre el diálogo de inicio de sesión; `nota` explica por qué se pidió (por ejemplo, para reservar). */
 function abrirEntrar(nota) {
   modoRegistro = false;
   actualizarModoEntrar();
@@ -469,6 +540,7 @@ function abrirEntrar(nota) {
   $('#dlg-entrar').showModal();
 }
 
+/** Cambia el diálogo entre "Iniciar sesión" y "Crear cuenta de cliente". */
 function actualizarModoEntrar() {
   $('#titulo-entrar').textContent = modoRegistro ? 'Crear cuenta de cliente' : 'Iniciar sesión';
   $('#campo-nombre').hidden = !modoRegistro;
@@ -477,6 +549,10 @@ function actualizarModoEntrar() {
   $('#btn-cambiar-modo').textContent = modoRegistro ? 'Ya tengo cuenta' : 'Crear una cuenta de cliente';
 }
 
+/**
+ * Inicia sesión o, en modo registro, crea la cuenta y luego inicia sesión con ella.
+ * Guarda el token, el rol y el nombre, y muestra la vista que corresponde al rol.
+ */
 async function enviarEntrar(formulario) {
   const datos = Object.fromEntries(new FormData(formulario));
   if (modoRegistro) {
@@ -497,6 +573,8 @@ async function enviarEntrar(formulario) {
 // ---------------------------------------------------------------------
 // Eventos
 // ---------------------------------------------------------------------
+// Al terminar de cargar la página: valores iniciales, eventos de formularios y botones, y
+// comprobación de la sesión guardada.
 document.addEventListener('DOMContentLoaded', () => {
   // Fechas sugeridas: dentro de 7 días, por 3 noches
   const entrada = new Date();

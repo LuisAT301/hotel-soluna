@@ -3,6 +3,8 @@
    Sin librerías ni fuentes externas: la política de seguridad (CSP) del
    sitio solo permite archivos servidos por el propio hotel.
    ===================================================================== */
+/* Variables de diseño: paleta, radio de las esquinas, tipografías y ancho
+   máximo del contenido. Cambiarlas aquí ajusta todo el sitio de una vez. */
 :root {
   --oceano: #0B3C5D;      /* azul profundo: marca, títulos */
   --oceano-noche: #082436;
@@ -24,6 +26,9 @@
 }
 
 * { box-sizing: border-box; }
+/* Desplazamiento suave hacia las secciones; el margen superior compensa la
+   barra fija para que el título no quede tapado. Quien pidió menos animación
+   en su sistema operativo recibe el salto directo. */
 html { scroll-behavior: smooth; scroll-padding-top: 76px; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
@@ -35,11 +40,13 @@ body {
   line-height: 1.5;
 }
 
+/* El atributo hidden que usa app.js siempre gana, aunque otra regla dé display */
 [hidden] { display: none !important; }
 img { max-width: 100%; }
 a { color: var(--laguna); }
 :focus-visible { outline: 3px solid var(--sol); outline-offset: 2px; }
 
+/* .sr: texto solo para lectores de pantalla. .saltar: enlace oculto que aparece al usar el teclado. */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .saltar { position: absolute; left: 12px; top: -48px; background: var(--blanco); padding: 8px 12px; border-radius: 6px; z-index: 50; }
 .saltar:focus { top: 12px; }
@@ -327,6 +334,7 @@ dialog input { width: 100%; }
 /* =====================================================================
    Pantallas angostas
    ===================================================================== */
+/* Tabletas: el menú se convierte en un panel desplegable que abre el botón ☰ */
 @media (max-width: 920px) {
   .btn-menu { display: block; }
   .menu {
@@ -348,6 +356,7 @@ dialog input { width: 100%; }
   .pie-columnas { grid-template-columns: 1fr 1fr; }
 }
 
+/* Teléfonos: una sola columna y campos de formulario a todo el ancho */
 @media (max-width: 600px) {
   .barra { gap: 10px; }
   .marca-texto small { display: none; }

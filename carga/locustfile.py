@@ -27,6 +27,9 @@ replicas: Counter = Counter()
 
 
 def fechas_al_azar(noches: int = 2) -> tuple[date, date]:
+    """Entrada entre 20 y 300 días en el futuro y salida ``noches`` después: reparte las reservas
+    en el calendario.
+    """
     entrada = date.today() + timedelta(days=random.randint(20, 300))
     return entrada, entrada + timedelta(days=noches)
 
@@ -38,6 +41,7 @@ class UsuarioSoluna(HttpUser):
     abstract = True
 
     def on_start(self):
+        """Se ejecuta una vez al crear cada usuario simulado."""
         self.client.trust_env = True
 
 
@@ -48,14 +52,17 @@ class Visitante(UsuarioSoluna):
 
     @task(2)
     def pagina_de_inicio(self):
+        """Carga la página del sitio (archivo estático)."""
         self.client.get("/", name="sitio: inicio")
 
     @task(3)
     def catalogo(self):
+        """Consulta el catálogo público de tipos de habitación."""
         self.client.get("/api/tipos-habitacion", name="api: catálogo")
 
     @task(5)
     def disponibilidad(self):
+        """Busca habitaciones libres para fechas y cantidad de personas al azar."""
         entrada, salida = fechas_al_azar(random.randint(1, 5))
         self.client.get("/api/disponibilidad", name="api: disponibilidad",
                         params={"entrada": entrada, "salida": salida, "personas": random.randint(1, 4)})
@@ -68,6 +75,7 @@ class Cliente(UsuarioSoluna):
     wait_time = between(2, 6)
 
     def on_start(self):
+        """Inicia sesión una sola vez; si no lo logra, sus tareas no hacen nada."""
         super().on_start()
         r = self.client.post("/api/auth/login", name="api: inicio de sesión",
                              data={"username": "cliente@soluna.test", "password": DEMO_PASSWORD})
@@ -75,11 +83,17 @@ class Cliente(UsuarioSoluna):
 
     @task(3)
     def mis_reservas(self):
+        """Consulta la lista de reservas propias."""
         if self.cabeceras:
             self.client.get("/api/reservas", name="api: mis reservas", headers=self.cabeceras)
 
     @task(1)
     def reservar_y_cancelar(self):
+        """Busca una habitación libre, la reserva y la cancela de inmediato.
+
+        Si otro usuario simulado ganó la habitación (409), se cuenta como éxito:
+        es la regla contra la sobreventa funcionando bajo carga.
+        """
         if not self.cabeceras:
             return
         entrada, salida = fechas_al_azar()
@@ -111,6 +125,7 @@ class Monitor(UsuarioSoluna):
 
     @task
     def salud(self):
+        """Consulta la salud y cuenta qué réplica o instancia respondió."""
         r = self.client.get("/api/salud", name="api: salud")
         if r.ok:
             replicas[r.json().get("replica", "?")] += 1
@@ -118,6 +133,7 @@ class Monitor(UsuarioSoluna):
 
 @events.quitting.add_listener
 def resumen(environment, **_):
+    """Al terminar la prueba, imprime cuántas consultas atendió cada réplica, con su porcentaje."""
     if not replicas:
         return
     total = sum(replicas.values())

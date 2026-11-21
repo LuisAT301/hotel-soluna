@@ -8,6 +8,14 @@ token creado en una debe poder usarse en otra: ahí el estado vive en el esquema
 Ninguna de las dos versiones guarda el número completo de la tarjeta: al crear
 el token se guardan solo la marca, los últimos cuatro dígitos y el resultado
 que tendrá el cobro, como haría una pasarela real.
+
+Las dos clases ofrecen exactamente los mismos métodos (la misma interfaz),
+así que simulador.py usa una u otra sin saber cuál es:
+  tokens        guardar_token, tomar_token
+  idempotencia  obtener_idempotencia, guardar_idempotencia
+  cobros        guardar_cobro, obtener_cobro, marcar_reembolso, listar_cobros
+  Hacienda      obtener_comprobante, guardar_comprobante, listar_respuestas_hacienda
+  OTA           guardar_aviso, listar_avisos
 """
 import json
 import time
@@ -15,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 
 
 class Memoria:
+    """Estado en diccionarios de Python: rápido y suficiente para una sola copia (Docker)."""
+
     def __init__(self) -> None:
         self.tokens: dict[str, dict] = {}
         self.cobros: dict[str, dict] = {}
@@ -24,9 +34,11 @@ class Memoria:
 
     # --- tokens de un solo uso
     def guardar_token(self, token: str, datos: dict, minutos: int) -> None:
+        """Guarda los datos del token con su hora de vencimiento (reloj monotónico, inmune a cambios de hora)."""
         self.tokens[token] = {**datos, "_vence": time.monotonic() + minutos * 60}
 
     def tomar_token(self, token: str) -> dict | None:
+        """Saca el token (deja de existir) y devuelve sus datos, o None si no existe o venció."""
         datos = self.tokens.pop(token, None)
         if datos is None or datos["_vence"] < time.monotonic():
             return None
@@ -37,6 +49,7 @@ class Memoria:
         return self.idempotencia.get(llave)
 
     def guardar_idempotencia(self, llave: str, huella: str, respuesta: dict) -> None:
+        """Guarda la respuesta de la llave solo si no había una: la primera respuesta es la definitiva."""
         self.idempotencia.setdefault(llave, {"huella": huella, "respuesta": respuesta})
 
     # --- cobros y reembolsos
@@ -78,7 +91,13 @@ class Memoria:
 
 class BaseDatos:
     """La misma interfaz sobre PostgreSQL. Cada operación abre y cierra su conexión,
-    porque en Vercel se usa el pooler de Supabase en modo transacción."""
+    porque en Vercel se usa el pooler de Supabase en modo transacción.
+
+    Las operaciones que deben ser únicas se resuelven con una sola sentencia
+    SQL atómica, de modo que dos instancias de la función que atienden
+    solicitudes simultáneas no puedan usar dos veces el mismo token ni
+    reembolsar dos veces el mismo cobro.
+    """
 
     def __init__(self, **conexion) -> None:
         import psycopg  # solo hace falta en este modo
@@ -88,6 +107,12 @@ class BaseDatos:
         self._conexion = conexion
 
     def _ejecutar(self, sql: str, parametros: tuple = (), una: bool = False, todas: bool = False):
+        """Ejecuta una sentencia en su propia conexión (autocommit).
+
+        Devuelve una fila (``una``), todas las filas (``todas``) o la cantidad
+        de filas afectadas. Los valores van como parámetros (%s), nunca
+        pegados al texto SQL, lo que impide la inyección de SQL.
+        """
         # prepare_threshold=None: el modo transacción del pooler no admite sentencias preparadas
         with self._psycopg.connect(**self._conexion, autocommit=True, prepare_threshold=None) as c:
             cursor = c.execute(sql, parametros)
@@ -100,6 +125,7 @@ class BaseDatos:
     # --- tokens de un solo uso
     def guardar_token(self, token: str, datos: dict, minutos: int) -> None:
         vence = datetime.now(timezone.utc) + timedelta(minutes=minutos)
+        # De paso se limpian los tokens vencidos, para que la tabla no crezca sin fin
         self._ejecutar("DELETE FROM simulador.tokens WHERE vence < now()")
         self._ejecutar("INSERT INTO simulador.tokens (token, datos, vence) VALUES (%s, %s, %s)",
                        (token, self._Jsonb(datos), vence))
@@ -149,6 +175,7 @@ class BaseDatos:
         return {"comprobante": fila[0], "respuesta": fila[1]} if fila else None
 
     def guardar_comprobante(self, clave: str, comprobante: dict, respuesta: dict) -> None:
+        """Guarda el comprobante; json.dumps(default=str) convierte fechas y decimales a texto para JSONB."""
         self._ejecutar("INSERT INTO simulador.comprobantes (clave, comprobante, respuesta) VALUES (%s, %s, %s) "
                        "ON CONFLICT (clave) DO NOTHING",
                        (clave, self._Jsonb(json.loads(json.dumps(comprobante, default=str))), self._Jsonb(respuesta)))

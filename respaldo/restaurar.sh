@@ -39,6 +39,7 @@ marca=$(echo "$archivo" | sed -E 's/hotel-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{
 inicio=$(date +%s)
 
 export PGOPTIONS="-c client_min_messages=warning"
+# psql como administrador, sin leer ~/.psqlrc (-X), silencioso (-q) y deteniéndose ante el primer error
 psql() { command psql -X -q -v ON_ERROR_STOP=1 -U postgres "$@"; }
 
 # No se pisa una contingencia con trabajo hecho: esas reservas aún no están en la nube

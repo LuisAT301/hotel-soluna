@@ -27,6 +27,7 @@ if [ ! -f .env ] || ! grep -q '^SUPABASE_HOST=' .env; then
     exit 1
 fi
 
+# Encabezado de cada etapa en la salida
 titulo() { printf '\n== %s ==\n' "$1"; }
 
 conteos_origen() {
@@ -40,6 +41,7 @@ conteos_origen() {
           SELECT '\''usuarios'\'', count(*) FROM hotel.usuarios"'
 }
 
+# Cuenta las filas en una base del nodo (por el socket local, como administrador)
 conteos_local() {
     docker compose $LOCAL exec -T db psql -X -A -t -F " " -U postgres -d "$1" -c "
         SELECT 'reservas', count(*) FROM hotel.reservas UNION ALL

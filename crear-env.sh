@@ -5,12 +5,17 @@
 #     sh crear-env.sh
 # Pregunta si la base de datos estará en Supabase o en Docker (local).
 # Si ya existe un .env, lo guarda como .env.anterior antes de reemplazarlo.
+#
+# Pasos: 1) pregunta el modo; 2) en modo Supabase, extrae de la cadena de
+# conexión la referencia del proyecto y el servidor; 3) genera contraseñas al
+# azar; 4) escribe el .env y, si hace falta, el SQL que activa los usuarios.
 # =====================================================================
+# Detenerse ante cualquier error y trabajar siempre en la carpeta del script
 set -e
 cd "$(dirname "$0")"
 
 aleatorio() {
-    # 48 caracteres hexadecimales al azar
+    # 48 caracteres hexadecimales al azar, leídos del generador del sistema (/dev/urandom)
     od -An -tx1 -N24 /dev/urandom | tr -dc '0-9a-f'
 }
 
@@ -30,6 +35,7 @@ if [ "$opcion" = "2" ]; then
     echo "  postgresql://postgres.abcdefghijklmnop:[YOUR-PASSWORD]@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
     printf "Pegue la cadena aquí: "
     read -r cadena
+    # De "postgres.REFERENCIA:...@SERVIDOR:5432" se toman la referencia y el servidor
     SUPABASE_REF=$(printf '%s' "$cadena" | sed -n 's#.*postgres\.\([a-z0-9]*\)[:@].*#\1#p')
     SUPABASE_HOST=$(printf '%s' "$cadena" | sed -n 's#.*@\([^:/]*\).*#\1#p')
     if [ -z "$SUPABASE_REF" ] || [ -z "$SUPABASE_HOST" ]; then
@@ -42,6 +48,7 @@ if [ "$opcion" = "2" ]; then
     echo "Si otro integrante ya activó los usuarios de la base en Supabase, pegue la"
     echo "contraseña de la API (DB_APP_PASSWORD) que le compartió por un medio privado."
     printf "Contraseña compartida (Enter si usted es el primero del equipo): "
+    # stty -echo oculta lo que se escribe, como al pedir una contraseña
     stty -echo 2>/dev/null || true
     read -r COMPARTIDA || COMPARTIDA=""
     stty echo 2>/dev/null || true
@@ -53,6 +60,7 @@ if [ -f .env ]; then
     echo "Había un .env: se guardó una copia en .env.anterior"
 fi
 
+# Contraseña de la API: la compartida por el equipo o una nueva al azar
 APP_PASS=${COMPARTIDA:-$(aleatorio)}
 RESPALDO_PASS=$(aleatorio)
 
@@ -87,6 +95,7 @@ ALTER ROLE respaldo  WITH LOGIN PASSWORD '$RESPALDO_PASS';
 EOF
 fi
 
+# Instrucciones finales según el caso
 echo ""
 echo "Listo: .env creado con todas las contraseñas."
 echo "Contraseña de las cuentas de demostración: SolunaDemo2026"
