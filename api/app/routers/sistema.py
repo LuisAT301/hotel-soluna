@@ -34,10 +34,10 @@ def salud(respuesta: Response, sesion: Session = Depends(obtener_sesion)):
         sesion.execute(text("SELECT 1"))
         base = "ok"
         # Una base creada con una versión anterior no tiene las tablas nuevas
-        # (la más reciente es "suscriptores"): la API enciende, pero algunas
+        # (la más reciente es "resenas"): la API enciende, pero algunas
         # funciones fallan. Se avisa en vez de fallar en silencio.
         # Sin esquema explícito: sirve con "public" (Docker) y con "hotel" (Supabase)
-        if sesion.execute(text("SELECT to_regclass('suscriptores')")).scalar() is None:
+        if sesion.execute(text("SELECT to_regclass('resenas')")).scalar() is None:
             base = "desactualizada: ejecute docker compose down -v y vuelva a levantar"
             if not _aviso_esquema_dado:
                 registro.error("La base de datos es de una versión anterior y le faltan tablas. "

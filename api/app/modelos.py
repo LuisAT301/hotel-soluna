@@ -172,6 +172,25 @@ class Factura(Base):
     reserva: Mapped[Reserva] = relationship(back_populates="factura")
 
 
+class Resena(Base):
+    """Reseña verificada: la escribe el titular de una reservación ya cumplida.
+
+    Hay como máximo una por reservación (restricción UNIQUE en la base).
+    """
+    __tablename__ = "resenas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    calificacion: Mapped[int]                    # de 1 a 5 estrellas
+    comentario: Mapped[str]
+    creada_en: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    # Se cargan en la misma consulta: el sitio muestra el autor y el tipo de habitación
+    reserva: Mapped[Reserva] = relationship(lazy="joined")
+    usuario: Mapped[Usuario] = relationship(lazy="joined")
+
+
 class Suscriptor(Base):
     """Correo dejado en el sitio web para recibir ofertas y novedades."""
     __tablename__ = "suscriptores"
