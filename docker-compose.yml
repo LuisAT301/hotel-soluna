@@ -12,6 +12,9 @@
 name: hotel-soluna
 
 services:
+  # Base de datos PostgreSQL 17. La primera vez que arranca con el volumen vacío
+  # ejecuta los scripts de db/init (esquema, catálogo y usuarios con permisos
+  # mínimos). Solo está en la red interna "datos": nada fuera de Docker la alcanza.
   db:
     image: postgres:17-alpine
     environment:
@@ -35,6 +38,9 @@ services:
     restart: unless-stopped
     # Sin "ports": la base no se publica fuera de Docker
 
+  # API FastAPI. Recibe los secretos como archivos (variables *_FILE) y espera
+  # a que la base esté sana. Está en "datos" (para la base) y en "backend" (para
+  # Nginx, el simulador y Mailpit).
   api:
     build: ./api
     environment:
@@ -68,6 +74,8 @@ services:
     # Sin "ports": a la API solo se llega a través de Nginx
     restart: unless-stopped
 
+  # Nginx: único punto de entrada. Sirve la interfaz web, termina HTTPS y reparte
+  # las solicitudes /api entre las réplicas. Arranca cuando la API y el simulador están sanos.
   nginx:
     build: ./nginx
     ports:
@@ -142,6 +150,7 @@ services:
       - certificados:/certs:ro
     restart: "no"
 
+  # Locust contra el sitio publicado en Vercel (red normal, certificados públicos)
   carga-nube:
     image: locustio/locust:2.37.14
     profiles: ["carga"]

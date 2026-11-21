@@ -17,12 +17,16 @@ SALIDA = ENTRADA + timedelta(days=3)
 
 
 def _reserva(habitacion_id=1, entrada=ENTRADA, salida=SALIDA, **extra):
+    """Cuerpo de una solicitud de reserva con valores por defecto; ``extra`` agrega o reemplaza
+    campos.
+    """
     return {"habitacion_id": habitacion_id, "fecha_entrada": str(entrada),
             "fecha_salida": str(salida), "personas": 2, **extra}
 
 
 # ------------------------------------------------------------- salud
 def test_salud_indica_replica(cliente_http):
+    """La salud responde ok y la cabecera X-Replica coincide con la réplica del cuerpo."""
     r = cliente_http.get("/api/salud")
     assert r.status_code == 200
     assert r.json()["base_de_datos"] == "ok"
@@ -31,12 +35,14 @@ def test_salud_indica_replica(cliente_http):
 
 # ------------------------------------------------------------- autenticación
 def test_contrasenas_guardadas_con_argon2id(admin_db):
+    """Las contraseñas se guardan como hash Argon2id y nunca en texto plano."""
     hashes = [h for (h,) in admin_db.execute("SELECT hash_contrasena FROM usuarios")]
     assert hashes and all(h.startswith("$argon2id$") for h in hashes)
     assert all(os.environ["DEMO_PASSWORD"] not in h for h in hashes)
 
 
 def test_login_incorrecto_es_generico(cliente_http):
+    """Contraseña equivocada y correo inexistente dan exactamente la misma respuesta."""
     malo = cliente_http.post("/api/auth/login", data={"username": "recepcion@soluna.test", "password": "x" * 9})
     inexistente = cliente_http.post("/api/auth/login", data={"username": "nadie@soluna.test", "password": "x" * 9})
     assert malo.status_code == inexistente.status_code == 401
@@ -44,6 +50,9 @@ def test_login_incorrecto_es_generico(cliente_http):
 
 
 def test_bloqueo_tras_cinco_intentos(cliente_http):
+    """Tras cinco intentos fallidos la cuenta se bloquea (423), incluso con la contraseña
+    correcta.
+    """
     for _ in range(5):
         cliente_http.post("/api/auth/login", data={"username": "recepcion@soluna.test", "password": "incorrecta1"})
     # Ni siquiera la contraseña correcta entra mientras dure el bloqueo
@@ -53,12 +62,14 @@ def test_bloqueo_tras_cinco_intentos(cliente_http):
 
 
 def test_token_alterado_es_rechazado(cliente_http):
+    """Un token con la firma modificada se rechaza con 401."""
     cabecera = iniciar_sesion(cliente_http, "gerencia@soluna.test")
     alterado = {"Authorization": cabecera["Authorization"][:-3] + "abc"}
     assert cliente_http.get("/api/auth/yo", headers=alterado).status_code == 401
 
 
 def test_registro_de_cliente_siempre_es_cliente(cliente_http):
+    """El registro público ignora el rol pedido y guarda el correo en minúsculas."""
     r = cliente_http.post("/api/auth/registro", json={
         "nombre": "Ana Mora", "correo": "Ana@Correo.test", "contrasena": "Segura2026", "rol": "gerente"})
     assert r.status_code == 201
@@ -66,6 +77,7 @@ def test_registro_de_cliente_siempre_es_cliente(cliente_http):
 
 
 def test_usuario_desactivado_pierde_acceso(cliente_http):
+    """Al desactivar una cuenta, su token deja de servir de inmediato."""
     gerente = iniciar_sesion(cliente_http, "gerencia@soluna.test")
     limpieza = iniciar_sesion(cliente_http, "limpieza@soluna.test")
     id_limpieza = next(u["id"] for u in cliente_http.get("/api/usuarios", headers=gerente).json()
@@ -85,14 +97,17 @@ def test_usuario_desactivado_pierde_acceso(cliente_http):
     ("gerencia@soluna.test", "/api/bitacora", 200),
 ])
 def test_permisos_por_rol(cliente_http, correo, ruta, esperado):
+    """Cada rol accede solo a las rutas que le corresponden (403 en las demás)."""
     assert cliente_http.get(ruta, headers=iniciar_sesion(cliente_http, correo)).status_code == esperado
 
 
 def test_sin_token_no_hay_acceso(cliente_http):
+    """Las rutas protegidas responden 401 sin token."""
     assert cliente_http.get("/api/reservas").status_code == 401
 
 
 def test_limpieza_actualiza_estado(cliente_http):
+    """El personal de limpieza puede cambiar el estado de una habitación."""
     r = cliente_http.patch("/api/habitaciones/1/limpieza", json={"estado": "sucia"},
                            headers=iniciar_sesion(cliente_http, "limpieza@soluna.test"))
     assert r.status_code == 200 and r.json()["estado_limpieza"] == "sucia"
@@ -100,6 +115,9 @@ def test_limpieza_actualiza_estado(cliente_http):
 
 # ------------------------------------------------------------- disponibilidad y reservas
 def test_disponibilidad_y_precio_por_temporada(cliente_http):
+    """El precio suma cada noche según su temporada (abril alta, mayo baja) y se ofrecen las 46
+    habitaciones.
+    """
     entrada = date(date.today().year + 1, 4, 29)  # 2 noches de alta (abril) y 1 de baja (mayo)
     r = cliente_http.get("/api/disponibilidad", params={
         "entrada": str(entrada), "salida": str(entrada + timedelta(days=3)), "personas": 2})
@@ -110,18 +128,23 @@ def test_disponibilidad_y_precio_por_temporada(cliente_http):
 
 
 def test_capacidad_filtra_habitaciones(cliente_http):
+    """Para cuatro personas solo se ofrecen suites."""
     r = cliente_http.get("/api/disponibilidad", params={
         "entrada": str(ENTRADA), "salida": str(SALIDA), "personas": 4})
     assert {h["tipo"] for h in r.json()} == {"suite"}
 
 
 def test_fechas_invalidas(cliente_http):
+    """Una fecha de entrada pasada se rechaza con 422."""
     ayer = date.today() - timedelta(days=1)
     r = cliente_http.get("/api/disponibilidad", params={"entrada": str(ayer), "salida": str(SALIDA)})
     assert r.status_code == 422
 
 
 def test_reserva_de_cliente_queda_pendiente_de_pago(cliente_http):
+    """La reserva en línea de un cliente nace pendiente de pago, por el canal web y con código
+    SOL-.
+    """
     r = cliente_http.post("/api/reservas", json=_reserva(),
                           headers=iniciar_sesion(cliente_http, "cliente@soluna.test"))
     assert r.status_code == 201
@@ -130,6 +153,9 @@ def test_reserva_de_cliente_queda_pendiente_de_pago(cliente_http):
 
 
 def test_no_hay_sobreventa(cliente_http):
+    """Un traslape parcial se rechaza (409), una reserva contigua se acepta y la habitación
+    desaparece de la disponibilidad.
+    """
     recepcion = iniciar_sesion(cliente_http, "recepcion@soluna.test")
     huesped = {"nombre_huesped": "Luis Pérez", "correo_huesped": "luis@correo.test"}
     assert cliente_http.post("/api/reservas", json=_reserva(**huesped), headers=recepcion).status_code == 201
@@ -145,6 +171,7 @@ def test_no_hay_sobreventa(cliente_http):
 
 
 def test_cancelar_libera_la_habitacion(cliente_http):
+    """Cancelar una reserva deja la habitación libre para otra reserva en las mismas fechas."""
     cliente = iniciar_sesion(cliente_http, "cliente@soluna.test")
     codigo = cliente_http.post("/api/reservas", json=_reserva(), headers=cliente).json()["codigo"]
     assert cliente_http.post(f"/api/reservas/{codigo}/cancelar", headers=cliente).json()["estado"] == "cancelada"
@@ -155,6 +182,7 @@ def test_cancelar_libera_la_habitacion(cliente_http):
 
 
 def test_cliente_no_ve_reservas_ajenas(cliente_http):
+    """Un cliente no puede ver, cancelar ni listar reservas de otros (para él no existen)."""
     recepcion = iniciar_sesion(cliente_http, "recepcion@soluna.test")
     codigo = cliente_http.post("/api/reservas", json=_reserva(
         nombre_huesped="Huésped Ajeno", correo_huesped="ajeno@correo.test"), headers=recepcion).json()["codigo"]
@@ -165,6 +193,7 @@ def test_cliente_no_ve_reservas_ajenas(cliente_http):
 
 
 def test_bitacora_registra_quien_hizo_que(cliente_http):
+    """Crear y cancelar quedan en la bitácora, con la réplica que atendió cada acción."""
     cliente = iniciar_sesion(cliente_http, "cliente@soluna.test")
     codigo = cliente_http.post("/api/reservas", json=_reserva(), headers=cliente).json()["codigo"]
     cliente_http.post(f"/api/reservas/{codigo}/cancelar", headers=cliente)
@@ -189,6 +218,9 @@ def test_api_no_puede_borrar_ni_alterar(admin_db):
 # ------------------------------------------------------------- concurrencia (servidor real, 2 procesos)
 @pytest.fixture(scope="module")
 def servidor():
+    """Levanta la API real con dos procesos (uvicorn --workers 2) para probar solicitudes
+    concurrentes.
+    """
     proceso = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8123", "--workers", "2", "--log-level", "warning"],
         cwd=os.path.dirname(os.path.dirname(__file__)))
@@ -211,6 +243,7 @@ def test_reservas_simultaneas_solo_una_gana(servidor):
     cuerpo = _reserva(habitacion_id=5, nombre_huesped="Carrera", correo_huesped="carrera@correo.test")
 
     def reservar(_):
+        """Envía una solicitud de reserva y devuelve solo el código HTTP."""
         return httpx.post(f"{servidor}/api/reservas", json=cuerpo, headers=cabecera, timeout=30).status_code
 
     with ThreadPoolExecutor(max_workers=10) as hilos:

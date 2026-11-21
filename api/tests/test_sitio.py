@@ -3,6 +3,7 @@ from .conftest import iniciar_sesion
 
 
 def test_catalogo_publico_con_precio_desde(cliente_http):
+    """El catálogo público trae los tres tipos con su precio más bajo, sin iniciar sesión."""
     r = cliente_http.get("/api/tipos-habitacion")
     assert r.status_code == 200
     tipos = {t["nombre"]: t for t in r.json()}
@@ -13,6 +14,7 @@ def test_catalogo_publico_con_precio_desde(cliente_http):
 
 
 def test_suscripcion_guarda_el_correo_y_da_la_bienvenida(cliente_http, admin_db, correos):
+    """La suscripción guarda el correo en minúsculas y envía la bienvenida."""
     r = cliente_http.post("/api/suscripciones", json={"correo": "Viajera@Correo.test"})
     assert r.status_code == 202
     assert admin_db.execute("SELECT correo, activo FROM suscriptores").fetchall() == [("viajera@correo.test", True)]
@@ -20,6 +22,7 @@ def test_suscripcion_guarda_el_correo_y_da_la_bienvenida(cliente_http, admin_db,
 
 
 def test_suscripcion_repetida_no_duplica_ni_revela_nada(cliente_http, admin_db, correos):
+    """Repetir un correo no duplica el registro y la respuesta es idéntica a la primera."""
     primera = cliente_http.post("/api/suscripciones", json={"correo": "repite@correo.test"})
     segunda = cliente_http.post("/api/suscripciones", json={"correo": "REPITE@correo.test"})
     # Misma respuesta: no se puede averiguar si un correo ya estaba en la lista
@@ -29,10 +32,12 @@ def test_suscripcion_repetida_no_duplica_ni_revela_nada(cliente_http, admin_db, 
 
 
 def test_suscripcion_rechaza_correo_invalido(cliente_http):
+    """Un correo mal formado se rechaza con 422."""
     assert cliente_http.post("/api/suscripciones", json={"correo": "no-es-un-correo"}).status_code == 422
 
 
 def test_solo_gerencia_ve_la_lista_de_suscriptores(cliente_http):
+    """Solo gerencia puede ver la lista de suscriptores."""
     cliente_http.post("/api/suscripciones", json={"correo": "lista@correo.test"})
     assert cliente_http.get("/api/suscripciones").status_code == 401
     cliente = iniciar_sesion(cliente_http, "cliente@soluna.test")

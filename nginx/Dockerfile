@@ -9,5 +9,6 @@ RUN apk add --no-cache openssl
 COPY 40-certificado.sh /docker-entrypoint.d/40-certificado.sh
 RUN chmod +x /docker-entrypoint.d/40-certificado.sh && rm -f /etc/nginx/conf.d/default.conf
 
+# soluna.conf define el sitio; los otros dos son fragmentos que se incluyen en cada location
 COPY soluna.conf /etc/nginx/conf.d/soluna.conf
 COPY proxy_api.conf cabeceras_seguridad.conf /etc/nginx/

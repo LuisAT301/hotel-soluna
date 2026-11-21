@@ -1,4 +1,10 @@
-"""RF-17: gestión de cuentas del personal (solo gerencia)."""
+"""RF-17: gestión de cuentas del personal (solo gerencia).
+
+Rutas:
+  GET  /api/usuarios                      lista de todas las cuentas.
+  POST /api/usuarios                      crea una cuenta con el rol indicado.
+  POST /api/usuarios/{id}/desactivar      desactiva una cuenta (no se borra, por auditoría).
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,11 +16,13 @@ from ..esquemas import NuevoUsuario, UsuarioSalida
 from ..modelos import Usuario
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
+# Dependencia reutilizada por todas las rutas de este módulo
 solo_gerencia = requiere_rol("gerente")
 
 
 @router.get("", response_model=list[UsuarioSalida])
 def listar(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(solo_gerencia)):
+    """Todas las cuentas, agrupadas por rol y ordenadas por nombre."""
     return sesion.scalars(select(Usuario).order_by(Usuario.rol, Usuario.nombre)).all()
 
 
@@ -46,6 +54,11 @@ def desactivar(
     sesion: Session = Depends(obtener_sesion),
     gerente: Usuario = Depends(solo_gerencia),
 ):
+    """Desactiva una cuenta: deja de poder iniciar sesión y sus tokens dejan de servir.
+
+    La cuenta no se borra, para conservar su historial en reservas y bitácora.
+    Gerencia no puede desactivar su propia cuenta y quedarse sin acceso.
+    """
     usuario = sesion.get(Usuario, usuario_id)
     if usuario is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuario no encontrado")

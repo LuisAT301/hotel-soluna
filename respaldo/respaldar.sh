@@ -30,6 +30,7 @@ export PGPASSWORD
 
 mkdir -p "$DESTINO"
 
+# Escribe un evento con fecha en la salida y en registro.txt (lo muestra "contingencia.sh estado")
 anotar() {
     linea="$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
     echo "$linea"
@@ -44,6 +45,10 @@ rotar() {
     done
 }
 
+# Hace una copia completa. Algoritmo: pg_dump a un archivo temporal; si falla,
+# se registra el error y se borra; si no, se comprueba que pg_restore pueda
+# leerlo, se le da su nombre definitivo, se calcula su huella y se rotan las copias.
+# Devuelve 0 si la copia quedó guardada y 1 si no.
 respaldar() {
     nombre="hotel-$(date -u +%Y%m%dT%H%M%SZ).dump"
     temporal="$DESTINO/.$nombre.parcial"

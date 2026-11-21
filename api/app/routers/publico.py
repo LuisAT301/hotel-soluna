@@ -1,4 +1,10 @@
-"""Información pública del sitio web: catálogo de habitaciones y suscripción por correo."""
+"""Información pública del sitio web: catálogo de habitaciones y suscripción por correo.
+
+Rutas:
+  GET  /api/tipos-habitacion   tipos con su precio más bajo y cuántas habitaciones hay (pública).
+  POST /api/suscripciones      deja un correo para recibir novedades (pública).
+  GET  /api/suscripciones      lista de suscriptores (solo gerencia).
+"""
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
@@ -17,7 +23,12 @@ router = APIRouter(prefix="/api", tags=["sitio web"])
 
 @router.get("/tipos-habitacion", response_model=list[TipoHabitacionSalida])
 def tipos_habitacion(sesion: Session = Depends(obtener_sesion)):
-    """Los tres tipos de habitación con su precio más bajo, para la página de inicio."""
+    """Los tres tipos de habitación con su precio más bajo, para la página de inicio.
+
+    Una sola consulta con dos subconsultas por tipo: la tarifa mínima (el
+    "desde") y la cantidad de habitaciones en servicio. Se ordena por
+    capacidad, de la estándar a la suite.
+    """
     filas = sesion.execute(
         select(TipoHabitacion,
                select(func.min(Tarifa.precio_noche)).where(Tarifa.tipo_id == TipoHabitacion.id)
@@ -40,6 +51,9 @@ def suscribirse(datos: NuevaSuscripcion, tareas: BackgroundTasks,
     La respuesta es la misma si el correo ya estaba suscrito: así nadie puede
     averiguar qué correos están en la lista.
     """
+    # INSERT ... ON CONFLICT DO NOTHING RETURNING id: inserta solo si el correo
+    # no existía y devuelve el id nuevo, o None si ya estaba. Es una sola
+    # operación atómica: dos envíos simultáneos del mismo correo no lo duplican.
     nuevo = sesion.execute(
         insert(Suscriptor).values(correo=datos.correo, origen="sitio_web")
         .on_conflict_do_nothing(index_elements=["correo"])
@@ -61,6 +75,7 @@ def suscribirse(datos: NuevaSuscripcion, tareas: BackgroundTasks,
 def bienvenidas_disponibles(sesion: Session) -> bool:
     """El formulario es público: pasado el tope por hora, se guarda el correo pero
     no se envía la bienvenida, para que nadie use el sitio como emisor masivo."""
+    # Cuenta las suscripciones de la última hora, incluida la que se acaba de guardar
     hace_una_hora = datetime.now(timezone.utc) - timedelta(hours=1)
     recientes = sesion.scalar(select(func.count(Suscriptor.id)).where(Suscriptor.creado_en >= hace_una_hora))
     return recientes <= config.CORREO_BIENVENIDAS_HORA

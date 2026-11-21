@@ -1,4 +1,13 @@
-"""Registro de clientes e inicio de sesión."""
+"""Registro de clientes e inicio de sesión.
+
+Rutas:
+  POST /api/auth/registro  un cliente crea su cuenta (sin iniciar sesión).
+  POST /api/auth/login     correo y contraseña a cambio de un token de sesión.
+  GET  /api/auth/yo        datos de la cuenta dueña del token.
+
+El inicio de sesión resiste los ataques de fuerza bruta: tras MAX_INTENTOS
+contraseñas equivocadas, la cuenta se bloquea MINUTOS_BLOQUEO minutos.
+"""
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,6 +23,8 @@ from ..modelos import Usuario
 
 router = APIRouter(prefix="/api/auth", tags=["autenticación"])
 
+# Un mismo mensaje para correo inexistente, contraseña equivocada o cuenta
+# desactivada: así no se puede averiguar qué correos están registrados.
 _CREDENCIALES_INVALIDAS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Correo o contraseña incorrectos",
@@ -23,7 +34,11 @@ _CREDENCIALES_INVALIDAS = HTTPException(
 
 @router.post("/registro", response_model=UsuarioSalida, status_code=201)
 def registrar_cliente(datos: RegistroCliente, sesion: Session = Depends(obtener_sesion)):
-    """RF-02: un cliente crea su propia cuenta. Siempre recibe el rol "cliente"."""
+    """RF-02: un cliente crea su propia cuenta. Siempre recibe el rol "cliente".
+
+    El rol no se toma del cuerpo de la solicitud: nadie puede registrarse a sí
+    mismo como personal del hotel. Responde 409 si el correo ya existe.
+    """
     if sesion.scalar(select(Usuario).where(Usuario.correo == datos.correo)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe una cuenta con ese correo")
     usuario = Usuario(
@@ -33,7 +48,7 @@ def registrar_cliente(datos: RegistroCliente, sesion: Session = Depends(obtener_
         rol="cliente",
     )
     sesion.add(usuario)
-    sesion.flush()
+    sesion.flush()   # obtiene el id del usuario nuevo para la bitácora, sin confirmar todavía
     registrar(sesion, usuario, "registro", "usuario", usuario.id)
     sesion.commit()
     return usuario
@@ -44,7 +59,17 @@ def iniciar_sesion(
     formulario: OAuth2PasswordRequestForm = Depends(),
     sesion: Session = Depends(obtener_sesion),
 ):
-    """RF-01: el campo "username" del formulario es el correo."""
+    """RF-01: el campo "username" del formulario es el correo.
+
+    Algoritmo:
+      1. Busca la cuenta y la bloquea en la base (FOR UPDATE) mientras dura la solicitud.
+      2. Si está bloqueada por intentos fallidos, responde 423 sin revisar la contraseña.
+      3. Verifica la contraseña. Si falla, suma un intento; al llegar al máximo,
+         bloquea la cuenta por un tiempo y reinicia el contador. Responde 401.
+      4. Si acierta, reinicia el contador, actualiza el hash si sus parámetros
+         quedaron viejos y entrega el token de sesión.
+    Cada intento, correcto o no, queda en la bitácora.
+    """
     correo = formulario.username.strip().lower()
     # FOR UPDATE: si llegan dos intentos a la vez, se cuentan los dos
     usuario = sesion.scalar(select(Usuario).where(Usuario.correo == correo).with_for_update())
@@ -68,11 +93,14 @@ def iniciar_sesion(
             sesion.commit()
         raise _CREDENCIALES_INVALIDAS
 
+    # Una cuenta desactivada por gerencia no puede entrar, aunque la contraseña sea correcta
     if not usuario.activo:
         raise _CREDENCIALES_INVALIDAS
 
     usuario.intentos_fallidos = 0
     usuario.bloqueado_hasta = None
+    # Si los parámetros de Argon2 cambiaron desde que se creó el hash, se
+    # aprovecha que ahora se conoce la contraseña para guardarlo con los nuevos.
     if seguridad.hasher.check_needs_rehash(usuario.hash_contrasena):
         usuario.hash_contrasena = seguridad.hashear(formulario.password)
     registrar(sesion, usuario, "login", "usuario", usuario.id)
@@ -86,4 +114,5 @@ def iniciar_sesion(
 
 @router.get("/yo", response_model=UsuarioSalida)
 def quien_soy(usuario: Usuario = Depends(usuario_actual)):
+    """Devuelve la cuenta del token; la interfaz lo usa para comprobar si la sesión sigue vigente."""
     return usuario

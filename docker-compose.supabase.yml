@@ -7,9 +7,12 @@
 # Supabase, el .env ya indica a Docker que use este archivo (COMPOSE_FILE).
 # =====================================================================
 services:
+  # El contenedor de la base solo arranca si se pide el perfil "solo-local"
   db:
     profiles: ["solo-local"]   # la base local queda apagada
 
+  # La API deja de depender del contenedor "db" (!reset borra esa dependencia)
+  # y se conecta al pooler de Supabase con TLS obligatorio.
   api:
     depends_on: !reset {}
     environment:

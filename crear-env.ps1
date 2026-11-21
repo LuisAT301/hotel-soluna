@@ -4,12 +4,18 @@
 #     powershell -ExecutionPolicy Bypass -File .\crear-env.ps1
 # Pregunta si la base de datos estara en Supabase o en Docker (local).
 # Si ya existe un .env, lo guarda como .env.anterior antes de reemplazarlo.
+#
+# Pasos: 1) pregunta el modo; 2) en modo Supabase, extrae de la cadena de
+# conexion la referencia del proyecto y el servidor; 3) genera contrasenas al
+# azar; 4) escribe el .env y, si hace falta, el SQL que activa los usuarios.
+# Este archivo no lleva tildes: Windows PowerShell 5.1 podria leerlas mal.
 # =====================================================================
+# Detenerse ante cualquier error y trabajar siempre en la carpeta del script
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
 function Aleatorio {
-    # 48 caracteres hexadecimales al azar
+    # 48 caracteres hexadecimales al azar, con el generador criptografico del sistema
     $bytes = New-Object byte[] 24
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
@@ -34,6 +40,7 @@ if ($opcion -eq '2') {
     Write-Host "de conexion. Se ve asi (no hace falta poner la contrasena):"
     Write-Host "  postgresql://postgres.abcdefghijklmnop:[YOUR-PASSWORD]@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
     $cadena = Read-Host "Pegue la cadena aqui"
+    # De "postgres.REFERENCIA:...@SERVIDOR:5432" se toman la referencia y el servidor
     if ($cadena -match 'postgres\.([a-z0-9]+)[:@]') { $supabaseRef = $Matches[1] }
     if ($cadena -match '@([^:/]+)') { $supabaseHost = $Matches[1] }
     if (-not $supabaseRef -or -not $supabaseHost) {
@@ -45,6 +52,8 @@ if ($opcion -eq '2') {
     Write-Host ""
     Write-Host "Si otro integrante ya activo los usuarios de la base en Supabase, pegue la"
     Write-Host "contrasena de la API (DB_APP_PASSWORD) que le compartio por un medio privado."
+    # -AsSecureString oculta lo que se escribe; luego se convierte a texto y se
+    # borra de la memoria la copia intermedia (ZeroFreeBSTR).
     $segura = Read-Host "Contrasena compartida (Enter si usted es el primero del equipo)" -AsSecureString
     $puntero = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura)
     $compartida = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($puntero)
@@ -56,6 +65,7 @@ if (Test-Path .env) {
     Write-Host "Habia un .env: se guardo una copia en .env.anterior"
 }
 
+# Contrasena de la API: la compartida por el equipo o una nueva al azar
 $appPass = if ($compartida) { $compartida } else { Aleatorio }
 $respaldoPass = Aleatorio
 $fecha = Get-Date -Format 'dd/MM/yyyy HH:mm'
@@ -79,6 +89,7 @@ if ($opcion -eq '2') {
         "COMPOSE_FILE=docker-compose.yml;docker-compose.supabase.yml"
     )
 }
+# Solo la primera persona del equipo necesita activar los usuarios en Supabase
 if ($opcion -eq '2' -and -not $compartida) {
     Guardar 'activar-roles-supabase.sql' @(
         "-- Copie todo este archivo en el SQL Editor de Supabase y pulse Run."
@@ -90,6 +101,7 @@ if ($opcion -eq '2' -and -not $compartida) {
 }
 Guardar '.env' $lineas
 
+# Instrucciones finales segun el caso
 Write-Host ""
 Write-Host "Listo: .env creado con todas las contrasenas."
 Write-Host "Contrasena de las cuentas de demostracion: SolunaDemo2026"

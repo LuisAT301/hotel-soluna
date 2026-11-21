@@ -22,6 +22,12 @@ DOMINIOS_DE_PRUEBA = (".test", ".example", ".invalid", ".localhost",
 
 
 def es_de_prueba(destino: str) -> bool:
+    """Indica si el correo pertenece a un dominio reservado para pruebas.
+
+    Compara el dominio (lo que sigue a la última @) con la lista: los que
+    empiezan con punto se comparan como terminación (ana@hotel.test) y los
+    demás como dominio exacto o subdominio (x@mail.example.com).
+    """
     dominio = destino.rsplit("@", 1)[-1].lower().rstrip(".")
     return any(dominio == d.lstrip(".") or dominio.endswith(d if d.startswith(".") else "." + d)
                for d in DOMINIOS_DE_PRUEBA)
@@ -36,6 +42,13 @@ def programar(tareas, destino: str, asunto: str, cuerpo: str) -> None:
 
 
 def enviar(destino: str, asunto: str, cuerpo: str) -> None:
+    """Arma el mensaje y lo entrega al servidor SMTP configurado.
+
+    Antes de enviar descarta tres casos: correo desactivado (SMTP_HOST vacío o
+    "ninguno"), dominio de prueba con un proveedor real, y usuario SMTP sin
+    TLS. Cualquier error de red o del servidor queda en el registro y no se
+    propaga: un correo que falla nunca deshace una reserva o un pago.
+    """
     if not config.SMTP_HOST or config.SMTP_HOST.lower() == "ninguno":
         registro.warning("Sin servidor de correo configurado: no se envió '%s' a %s", asunto, destino)
         return
@@ -65,6 +78,7 @@ def enviar(destino: str, asunto: str, cuerpo: str) -> None:
 
 
 def detalle_reserva(reserva) -> str:
+    """Resumen de la reserva que se repite en los correos de confirmación y cancelación."""
     return (
         f"Código de reserva: {reserva.codigo}\n"
         f"Habitación: {reserva.habitacion.numero} ({reserva.habitacion.tipo.nombre})\n"

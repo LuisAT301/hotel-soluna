@@ -35,6 +35,9 @@ def tokenizar(simulador, numero=APROBADA):
 
 
 def reserva_pendiente(cliente_http, habitacion_id=1):
+    """Crea una reserva del cliente de prueba, pendiente de pago, y devuelve la reserva y su
+    cabecera de sesión.
+    """
     cliente = iniciar_sesion(cliente_http, "cliente@soluna.test")
     r = cliente_http.post("/api/reservas", headers=cliente, json={
         "habitacion_id": habitacion_id, "fecha_entrada": str(ENTRADA), "fecha_salida": str(SALIDA),
@@ -45,6 +48,9 @@ def reserva_pendiente(cliente_http, habitacion_id=1):
 
 # ------------------------------------------------------------- pasarela de pago
 def test_pago_aprobado_confirma_factura_y_avisa(cliente_http, simulador, admin_db, correos):
+    """Pago aprobado: reserva confirmada, monto con IVA, factura aceptada con clave válida,
+    correo enviado y sin número de tarjeta en la base.
+    """
     reserva, cliente = reserva_pendiente(cliente_http)
     r = cliente_http.post(f"/api/reservas/{reserva['codigo']}/pago", headers=cliente,
                           json={"token": tokenizar(simulador)})
@@ -74,6 +80,9 @@ def test_pago_aprobado_confirma_factura_y_avisa(cliente_http, simulador, admin_d
 
 
 def test_pago_rechazado_deja_la_reserva_pendiente(cliente_http, simulador, admin_db):
+    """Tarjeta rechazada: 402 con el motivo, la reserva sigue pendiente, el intento queda
+    registrado y luego se puede pagar con otra tarjeta.
+    """
     reserva, cliente = reserva_pendiente(cliente_http)
     r = cliente_http.post(f"/api/reservas/{reserva['codigo']}/pago", headers=cliente,
                           json={"token": tokenizar(simulador, RECHAZADA)})
@@ -87,6 +96,7 @@ def test_pago_rechazado_deja_la_reserva_pendiente(cliente_http, simulador, admin
 
 
 def test_pasarela_caida_no_confirma(cliente_http, simulador, admin_db):
+    """Si la pasarela falla (503), la reserva no se confirma ni se factura."""
     reserva, cliente = reserva_pendiente(cliente_http)
     r = cliente_http.post(f"/api/reservas/{reserva['codigo']}/pago", headers=cliente,
                           json={"token": tokenizar(simulador, PASARELA_CAIDA)})
@@ -96,6 +106,7 @@ def test_pasarela_caida_no_confirma(cliente_http, simulador, admin_db):
 
 
 def test_no_se_paga_dos_veces(cliente_http, simulador):
+    """Una reserva ya pagada no se puede pagar otra vez (409)."""
     reserva, cliente = reserva_pendiente(cliente_http)
     ruta = f"/api/reservas/{reserva['codigo']}/pago"
     assert cliente_http.post(ruta, headers=cliente, json={"token": tokenizar(simulador)}).status_code == 200
@@ -103,6 +114,7 @@ def test_no_se_paga_dos_veces(cliente_http, simulador):
 
 
 def test_token_de_un_solo_uso(cliente_http, simulador):
+    """Un token de tarjeta ya usado no sirve para pagar otra reserva."""
     token = tokenizar(simulador)
     primera, cliente = reserva_pendiente(cliente_http, habitacion_id=1)
     segunda, _ = reserva_pendiente(cliente_http, habitacion_id=2)
@@ -120,12 +132,14 @@ def test_pasarela_exige_la_llave_del_comercio(simulador):
 
 
 def test_tarjeta_invalida_se_rechaza_en_la_pasarela(simulador):
+    """Un número que no cumple el algoritmo de Luhn se rechaza al tokenizar."""
     r = httpx.post(f"{simulador}/pasarela/tokens", json={
         "numero": "4242 4242 4242 4241", "titular": "X Y", "vencimiento": "12/39", "cvv": "123"})
     assert r.status_code == 422
 
 
 def test_cliente_no_paga_reservas_ajenas(cliente_http, simulador):
+    """Un cliente no puede pagar la reserva de otra persona (404)."""
     recepcion = iniciar_sesion(cliente_http, "recepcion@soluna.test")
     codigo = cliente_http.post("/api/reservas", headers=recepcion, json={
         "habitacion_id": 3, "fecha_entrada": str(ENTRADA), "fecha_salida": str(SALIDA), "personas": 1,
@@ -136,6 +150,7 @@ def test_cliente_no_paga_reservas_ajenas(cliente_http, simulador):
 
 
 def test_cancelar_reserva_pagada_reembolsa(cliente_http, simulador, admin_db, correos):
+    """Cancelar una reserva pagada registra el reembolso aprobado y avisa al huésped."""
     reserva, cliente = reserva_pendiente(cliente_http)
     cliente_http.post(f"/api/reservas/{reserva['codigo']}/pago", headers=cliente,
                       json={"token": tokenizar(simulador)})
@@ -147,6 +162,9 @@ def test_cancelar_reserva_pagada_reembolsa(cliente_http, simulador, admin_db, co
 
 
 def test_api_no_puede_alterar_pagos_ni_montos_de_factura(admin_db):
+    """El usuario de la API no puede modificar ni borrar pagos, ni cambiar el total de una factura o
+    borrarla.
+    """
     import psycopg
     conexion = psycopg.connect(host=os.environ["DB_HOST"], port=os.environ["DB_PORT"], dbname=os.environ.get("DB_NAME", "hotel"),
                                user="app_hotel", password=os.environ["DB_PASSWORD"], autocommit=True)
@@ -159,6 +177,9 @@ def test_api_no_puede_alterar_pagos_ni_montos_de_factura(admin_db):
 
 # ------------------------------------------------------------- OTA
 def aviso_ota(cliente_http, datos, secreto=None, fecha=None):
+    """Envía un aviso a la API como lo haría la OTA, con la firma HMAC calculada sobre fecha y
+    cuerpo.
+    """
     cuerpo = json.dumps(datos).encode()
     fecha = fecha or int(time.time())
     firma = "sha256=" + hmac.new((secreto or os.environ["OTA_SECRETO"]).encode(),
@@ -168,12 +189,14 @@ def aviso_ota(cliente_http, datos, secreto=None, fecha=None):
 
 
 def _datos_ota(referencia="OTA-0001", tipo="suite"):
+    """Datos de una reserva de OTA con valores por defecto; ``cambios`` reemplaza campos."""
     return {"referencia": referencia, "tipo": tipo, "fecha_entrada": str(ENTRADA),
             "fecha_salida": str(SALIDA), "personas": 2, "nombre_huesped": "Emma Dubois",
             "correo_huesped": "emma@viajero.test"}
 
 
 def test_ota_crea_reserva_confirmada(cliente_http, correos):
+    """Un aviso firmado crea una reserva confirmada por el canal ota y envía la confirmación."""
     r = aviso_ota(cliente_http, _datos_ota())
     assert r.status_code == 201, r.text
     assert r.json()["canal"] == "ota" and r.json()["estado"] == "confirmada" and r.json()["tipo"] == "suite"
@@ -186,6 +209,7 @@ def test_ota_crea_reserva_confirmada(cliente_http, correos):
 
 
 def test_ota_repetida_no_duplica(cliente_http):
+    """Reenviar la misma referencia devuelve la reserva existente (200) sin duplicarla."""
     primera = aviso_ota(cliente_http, _datos_ota())
     segunda = aviso_ota(cliente_http, _datos_ota())
     assert (primera.status_code, segunda.status_code) == (201, 200)
@@ -194,6 +218,7 @@ def test_ota_repetida_no_duplica(cliente_http):
 
 @pytest.mark.parametrize("cambio", ["secreto", "cuerpo", "fecha"])
 def test_ota_rechaza_avisos_no_autenticos(cliente_http, cambio):
+    """Firma falsa, cuerpo alterado o fecha vieja se rechazan con 401."""
     if cambio == "secreto":
         r = aviso_ota(cliente_http, _datos_ota(), secreto="otro-secreto")
     elif cambio == "fecha":
@@ -211,6 +236,7 @@ def test_ota_rechaza_avisos_no_autenticos(cliente_http, cambio):
 
 
 def test_ota_sin_disponibilidad(cliente_http):
+    """Si no quedan habitaciones del tipo pedido, la OTA recibe 409."""
     for i in range(8):  # el hotel tiene 8 suites
         assert aviso_ota(cliente_http, _datos_ota(f"OTA-S{i:03d}")).status_code == 201
     r = aviso_ota(cliente_http, _datos_ota("OTA-S999"))
@@ -219,6 +245,7 @@ def test_ota_sin_disponibilidad(cliente_http):
 
 # ------------------------------------------------------------- correo de recepción
 def test_reserva_de_recepcion_envia_confirmacion(cliente_http, correos):
+    """Una reserva de recepción nace confirmada y envía el correo al huésped."""
     recepcion = iniciar_sesion(cliente_http, "recepcion@soluna.test")
     r = cliente_http.post("/api/reservas", headers=recepcion, json={
         "habitacion_id": 4, "fecha_entrada": str(ENTRADA), "fecha_salida": str(SALIDA), "personas": 2,

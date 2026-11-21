@@ -6,6 +6,10 @@ Recorrido de un pago:
   3. La API cobra con el token, confirma la reserva y crea la factura en una
      sola transacción.
   4. Después envía la factura a Hacienda y el correo de confirmación.
+
+Rutas:
+  POST /api/reservas/{codigo}/pago      cobra con el token y confirma la reserva.
+  GET  /api/reservas/{codigo}/factura   la factura de la reserva (reintenta Hacienda si está pendiente).
 """
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -30,10 +34,22 @@ def pagar(
     sesion: Session = Depends(obtener_sesion),
     usuario: Usuario = Depends(usuario_actual),
 ):
+    """RF-06: cobra la reserva con el token de la tarjeta y emite la factura (RF-07).
+
+    Resultados posibles:
+      200  cobro aprobado: reserva confirmada, factura creada y correo enviado.
+      402  la tarjeta fue rechazada: el intento queda registrado y la reserva sigue pendiente.
+      409  la reserva no está pendiente de pago (por ejemplo, ya se pagó).
+      422  la pasarela rechazó el token o la respuesta no corresponde a la reserva.
+      503  la pasarela no responde: no se cobró nada y se puede reintentar.
+    La fila de la reserva queda bloqueada durante el pago, así que dos pagos
+    simultáneos de la misma reserva no pueden cobrarse dos veces.
+    """
     reserva = buscar_reserva(sesion, codigo, usuario, bloquear=True)
     if reserva.estado != "pendiente_pago":
         raise HTTPException(status.HTTP_409_CONFLICT, "La reserva no está pendiente de pago")
 
+    # Se cobra el hospedaje más el IVA del 13 %
     monto = reserva.total + facturacion.impuesto_de(reserva.total)
     try:
         resultado = servicios_externos.cobrar(
@@ -46,6 +62,8 @@ def pagar(
                             "La pasarela de pago no responde. La reserva sigue pendiente; "
                             "intente de nuevo en unos minutos.")
 
+    # Defensa adicional: la pasarela debe confirmar que cobró para esta reserva
+    # y no reutilizó un cobro anterior de otra (por ejemplo, con el mismo token).
     if resultado.get("referencia") != reserva.codigo:
         raise HTTPException(422, "La respuesta de la pasarela no corresponde a esta reserva")
 
@@ -55,12 +73,15 @@ def pagar(
     sesion.add(pago)
 
     if pago.estado != "aprobado":
+        # El rechazo también se guarda: queda constancia de cada intento de cobro
         registrar(sesion, usuario, "pago_rechazado", "reserva", reserva.codigo,
                   transaccion=pago.transaccion, motivo=pago.motivo)
         sesion.commit()
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
                             f"La tarjeta fue rechazada ({pago.motivo}). Puede intentar con otra.")
 
+    # Pago aprobado: confirmar la reserva, crear la factura y registrar la
+    # bitácora en una sola transacción, para que no quede ninguna a medias.
     reserva.estado = "confirmada"
     reserva.actualizada_en = func.now()
     factura = facturacion.crear(sesion, reserva)
@@ -83,6 +104,7 @@ def pagar(
 @router.get("/{codigo}/factura", response_model=FacturaSalida)
 def ver_factura(codigo: str, sesion: Session = Depends(obtener_sesion),
                 usuario: Usuario = Depends(usuario_actual)):
+    """RF-07: la factura de una reserva pagada. Si sigue pendiente ante Hacienda, se reenvía antes de responder."""
     reserva = buscar_reserva(sesion, codigo, usuario)
     if reserva.factura is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "La reserva no tiene factura")
