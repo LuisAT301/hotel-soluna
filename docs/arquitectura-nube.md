@@ -181,12 +181,27 @@ gratuito con pocas disponibles.
 | Servicio | Límite relevante | Consecuencia |
 |---|---|---|
 | Vercel Hobby | Uso personal y no comercial; registros de ejecución por 1 hora | Una operación real requiere el plan Pro |
-| Supabase Free | Pausa tras una semana sin uso; 500 MB; sin restauración a un punto en el tiempo | Reactivar antes de la exposición; respaldo propio |
+| Supabase Free | Pausa tras una semana sin uso; solo lectura al superar 500 MB; sin restauración a un punto en el tiempo | Reactivar antes de la exposición; respaldo propio; mantenimiento automático (sección 8.1) |
 | Brevo Free | 300 correos al día; reescribe remitentes de Gmail u Outlook | Suficiente para el prototipo; un dominio propio conservaría el remitente |
 
 Los límites de solicitudes que Nginx aplica en Docker (inicio de sesión, tarjetas y suscripciones) aún no
 están replicados en Vercel. La API conserva el bloqueo de cuentas tras intentos fallidos, pero un límite por
 dirección IP requeriría el *firewall* de Vercel.
+
+### 8.1. Mantenimiento de la base en el plan gratuito
+
+Supabase pasa la base a solo lectura cuando supera los 500 MB (Supabase, s. f.), lo que detendría las reservas
+y los pagos. Las lecturas no ocupan espacio; lo que crece son los registros. Por eso la función
+`hotel.mantenimiento()` aplica una política de retención: la bitácora se conserva 365 días, el mínimo de 12
+meses de PCI DSS 4.0 (PCI Security Standards Council, 2022, requisito 10.5.1); el historial de `pg_cron`,
+que no se depura solo, 7 días; y las llaves de idempotencia del simulador, 7 días. `pg_cron` la ejecuta cada
+día y, además, cada hora mide la base: si llega al 70 % del límite, recorta la bitácora a 90 días, los tres
+meses que la misma norma exige mantener disponibles de inmediato. Cada limpieza diaria deja constancia en la
+bitácora con el tamaño medido. Al activarla, la base ocupaba 12 MB.
+
+La carga de consultas se acota de otra forma: la API y el simulador tienen un límite de 15 s por consulta y de
+60 s para una transacción inactiva, en lugar de los minutos que permite PostgreSQL por omisión. Así, una
+consulta defectuosa no puede acaparar la capacidad compartida del plan gratuito.
 
 ## 9. Verificación
 
@@ -196,7 +211,7 @@ factura aceptada, pago repetido, cancelación con reembolso, protección del pan
 servicios, el registro en Hacienda y el aviso firmado de la OTA. Cancela al final las reservas que crea.
 
 En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con una mediana de 227 ms y un
-máximo de 605 ms por paso. Las 80 pruebas automáticas de `api/tests` cubren, además, los casos que no
+máximo de 605 ms por paso. Las 118 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
 ### 9.1. Prueba de carga
@@ -229,3 +244,6 @@ National Institute of Standards and Technology. https://doi.org/10.6028/NIST.SP.
 
 PCI Security Standards Council. (2022). *Payment Card Industry Data Security Standard: Requirements and
 testing procedures* (Version 4.0). https://www.pcisecuritystandards.org
+
+Supabase. (s. f.). *Understanding database and disk size*. Recuperado el 21 de noviembre de 2026, de
+https://supabase.com/docs/guides/platform/database-size

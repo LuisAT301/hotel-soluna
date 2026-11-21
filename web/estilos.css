@@ -352,6 +352,64 @@ dialog input { width: 100%; }
 #lista-habitaciones th { position: sticky; top: 0; }
 
 /* =====================================================================
+   Recepción (gestion.js): vistas, ficha de la reserva e historial
+   ===================================================================== */
+.estado.en_curso { background: #DCE8F5; color: var(--oceano); }
+.estado.finalizada { background: #ECE8E0; color: var(--gris); }
+.estado.atrasada, .estado.sale-hoy { margin-left: 6px; background: #FCEBD7; color: #8A4B12; }
+
+/* Botones de vista: el elegido lleva aria-pressed="true" */
+.vistas { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.vistas button {
+  font: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  background: var(--blanco);
+  color: var(--texto);
+}
+.vistas button[aria-pressed="true"] { background: var(--oceano); border-color: var(--oceano); color: var(--blanco); }
+.fila .crece { flex: 1 1 260px; }
+.fila .crece input { width: 100%; }
+
+/* Diálogo de gestión: más ancho que los demás */
+dialog.ancho { width: min(720px, 94vw); }
+.gestion { display: flex; flex-direction: column; gap: 14px; }
+.gestion h3 { margin: 0; font-size: 1rem; color: var(--oceano); }
+.ficha { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: .95rem; }
+.ficha dt { color: var(--gris); }
+.ficha dd { margin: 0; }
+.ficha small { color: var(--gris); }
+.ficha .estado + .estado { margin-left: 4px; }
+.modificar { border: 1px solid var(--borde); border-radius: var(--radio); padding: 14px 16px; background: #FBF8F2; }
+.modificar select { width: 100%; }
+.modificar input { height: 42px; }   /* mismo alto para fechas y números */
+
+/* Historial: una línea de tiempo con la fecha a la izquierda */
+.historial {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: .9rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.historial li {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  border-left: 3px solid var(--laguna-claro);
+  padding-left: 10px;
+}
+.historial time { color: var(--gris); grid-row: span 3; }
+.historial .quien, .historial .detalle { color: var(--gris); font-size: .85rem; }
+
+/* =====================================================================
    Pantallas angostas
    ===================================================================== */
 /* Tabletas: el menú se convierte en un panel desplegable que abre el botón ☰ */
@@ -387,4 +445,8 @@ dialog input { width: 100%; }
   input, select { min-width: 0; width: 100%; }
   .fila label { flex: 1 1 140px; }
   .pie-columnas { grid-template-columns: 1fr; }
+  .ficha, .historial li { grid-template-columns: 1fr; }
+  .ficha dt { margin-top: 6px; }
+  .historial time { grid-row: auto; }
+  .fila.compacta { flex-wrap: wrap; }
 }

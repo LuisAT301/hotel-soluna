@@ -30,10 +30,10 @@ const PERSONAL = ['recepcionista', 'limpieza', 'mantenimiento', 'gerente'];
 const VISTAS = {
   publico: ['buscar'],
   cliente: ['buscar', 'reservas'],
-  recepcionista: ['buscar', 'reservas', 'habitaciones'],
+  recepcionista: ['recepcion', 'buscar', 'reservas', 'habitaciones'],
   limpieza: ['habitaciones'],
   mantenimiento: ['habitaciones'],
-  gerente: ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
+  gerente: ['recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
 };
 
 // Formato de dinero en dólares con convenciones de Costa Rica, y atajo para buscar elementos
@@ -175,7 +175,7 @@ async function intentar(accion) {
 function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
   document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
-  for (const nombre of ['buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
+  for (const nombre of ['recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
     $(`#sec-${nombre}`).hidden = !vista.includes(nombre);
   }
   $('#btn-entrar').hidden = Boolean(sesion.token);
@@ -183,6 +183,7 @@ function mostrarVista() {
   $('#usuario-actual').textContent = sesion.token ? `${sesion.nombre} · ${ROLES[sesion.rol]}` : '';
   $('#titulo-reservas').textContent = sesion.rol === 'cliente' ? 'Mis reservas' : 'Reservas';
 
+  if (vista.includes('recepcion')) intentar(cargarRecepcion);   // definida en gestion.js
   if (vista.includes('reservas')) intentar(cargarReservas);
   if (vista.includes('habitaciones')) intentar(cargarHabitaciones);
   if (vista.includes('usuarios')) intentar(cargarUsuarios);
@@ -271,12 +272,16 @@ async function confirmarReserva(datos) {
   if (reserva.estado === 'pendiente_pago') abrirPago(reserva);
 }
 
-/** Lista las reservas con los botones que permite su estado: pagar, ver factura y cancelar. */
+/** Lista las reservas con los botones que permite su estado: gestionar (personal), pagar, ver factura y cancelar. */
 async function cargarReservas() {
   const reservas = await api('/api/reservas');
   const cancelable = (r) => ['pendiente_pago', 'confirmada'].includes(r.estado);
   const acciones = (r) => {
     const botones = [];
+    // Recepción y gerencia abren la reserva en el diálogo de gestión (gestion.js)
+    if (PUEDEN_GESTIONAR.includes(sesion.rol)) {
+      botones.push(el('button', { clase: 'boton pequeno', type: 'button', onclick: () => intentar(() => abrirGestion(r.codigo)) }, 'Gestionar'));
+    }
     if (r.estado === 'pendiente_pago') {
       botones.push(el('button', { clase: 'boton pequeno', type: 'button', onclick: () => abrirPago(r) }, 'Pagar'));
     }

@@ -247,3 +247,52 @@ class BitacoraSalida(BaseModel):
     entidad: str
     entidad_id: str | None
     detalle: dict
+
+
+# ---------------------------------------------------------------------
+# Gestión de reservas en recepción (panel del personal)
+# ---------------------------------------------------------------------
+VistaRecepcion = Literal["activas", "llegadas", "salidas", "en_casa", "todas"]
+
+
+class CambioReserva(BaseModel):
+    """Cambios que recepción hace a una reserva; los campos omitidos conservan su valor actual."""
+    habitacion_id: int | None = None
+    fecha_entrada: date | None = None
+    fecha_salida: date | None = None
+    personas: int | None = Field(default=None, ge=1, le=10)
+
+
+class Alternativa(BaseModel):
+    """Habitación a la que se puede mover una reserva, con el total que tendría la estadía allí."""
+    habitacion_id: int
+    numero: str
+    tipo: str
+    capacidad: int
+    estado_limpieza: str
+    total: Decimal          # hospedaje sin impuestos, recalculado por temporada
+    actual: bool            # es la habitación que la reserva ya tiene
+
+
+class EventoReserva(BaseModel):
+    """Una acción del historial de la reserva, tomada de la bitácora."""
+    fecha: datetime
+    accion: str
+    usuario: str | None     # None: un sistema externo (la OTA)
+    detalle: dict
+
+
+class DetalleReserva(BaseModel):
+    """Lo que recepción necesita para atender una reserva: datos, habitación, acciones e historial.
+
+    ``acciones`` la calcula la API según el estado y la fecha, para que la
+    interfaz muestre solo los botones que tienen sentido. La API vuelve a
+    validar cada acción al ejecutarla.
+    """
+    reserva: ReservaSalida
+    piso: int
+    estado_limpieza: EstadoLimpieza
+    fuera_de_servicio: bool
+    pagada_en_linea: bool
+    acciones: list[Literal["check_in", "check_out", "modificar", "cancelar"]]
+    historial: list[EventoReserva]
