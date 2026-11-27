@@ -146,11 +146,11 @@ sesión como `cliente@soluna.test` y opinar sobre `SOL-DEMO01`. Cada estadía ad
 | Rol | Secciones |
 |---|---|
 | Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
-| Cliente | La misma página de inicio, más Mis reservas (paga en línea, consulta su factura y, durante la estadía, escribe al hotel) |
+| Cliente | La misma página de inicio, más Mis reservas (paga en línea, consulta su factura, ve su cuenta de consumos y, durante la estadía, escribe al hotel) |
 | Recepcionista | Habitaciones hoy (tablero por piso), Solicitudes de huéspedes (todas las áreas), Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
 | Limpieza | Solicitudes de huéspedes de limpieza, Habitaciones (cambia el estado de limpieza) |
 | Mantenimiento | Solicitudes de huéspedes de mantenimiento, Habitaciones (solo lectura) |
-| Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
+| Gerente | Todo lo anterior, más Cuentas del personal, Catálogo de servicios, Bitácora y Correos suscritos |
 
 El personal entra directo a su panel de trabajo, sin la página de inicio.
 El pie de página muestra qué réplica de la API respondió la última solicitud.
@@ -311,6 +311,34 @@ ha ingresado; las reservas en línea ya están pagadas. Pasada la hora, recepci�
 la variable `HORA_GARANTIA` (17 por omisión) y el teléfono del hotel que aparece en el correo, con
 `TELEFONO_HOTEL`. Si se modifican las fechas o la habitación, el correo de cambio repite el monto y la nueva
 garantía.
+
+### Cuenta de la habitación: consumos y factura final
+
+Cada reserva tiene una **cuenta de la habitación**, que se ve en la gestión de la reserva (**Gestionar**). Ahí
+se cargan los consumos del huésped mientras está alojado: room service, restaurante, bar, minibar, spa,
+lavandería, transporte, tours u otros servicios que la habitación no incluye. Se cargan del **catálogo de
+servicios** o como cargo libre, con descripción, categoría y precio.
+
+| Concepto | Cómo se calcula |
+|---|---|
+| Hospedaje | El total de la estadía si se paga en el hotel (recepción o teléfono); si se pagó en línea o lo paga la agencia, no suma |
+| Consumos | Los cargos vigentes (los anulados quedan a la vista, tachados, con su motivo) |
+| IVA | 13 % del subtotal, igual que en la factura |
+| Pagado | Pagos recibidos en recepción: al llegar, adelantos o al salir (efectivo, tarjeta, SINPE Móvil o transferencia) |
+| **Por pagar a la salida** | Total menos lo pagado; se muestra también en la ficha de la reserva |
+
+- **Al registrar la salida:** si queda saldo, el botón pasa a ser **Cobrar USD X y registrar salida**. Cobra el
+  saldo exacto con el método elegido y emite la **factura electrónica final**, con una línea por concepto
+  (hospedaje y cada consumo), que se envía al simulador de Hacienda. Sin método de pago, la API rechaza la salida.
+- **Correo de salida:** incluye el resumen de la cuenta (cada consumo, IVA, total, pagos) y el número de la
+  factura final.
+- **El huésped** ve su cuenta desde **Mis reservas > Mi cuenta**, sin los nombres del personal.
+- **Gerencia** administra el **Catálogo de servicios**: agrega, cambia precios, activa y desactiva. Un cambio de
+  precio no altera lo ya cargado, porque cada cargo copia el precio del momento.
+- **Nada se borra:** un cargo equivocado se anula con motivo, un pago no se edita y los montos de una factura
+  nunca cambian. Cada carga, anulación y pago queda en la bitácora y en el historial de la reserva.
+
+Una reserva puede tener dos facturas: la del hospedaje pagado en línea y la de la cuenta final.
 
 ## Demostraciones del bloque 2
 
@@ -853,6 +881,14 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | POST | `/api/gestion/reservas/{codigo}/check-in` | Recepcionista, gerente |
 | POST | `/api/gestion/reservas/{codigo}/check-out` | Recepcionista, gerente |
 | PATCH | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: cambia habitación, fechas o personas |
+| GET | `/api/gestion/reservas/{codigo}/cuenta` | Recepcionista, gerente: estado de cuenta con lo que falta por pagar a la salida |
+| POST | `/api/gestion/reservas/{codigo}/cargos` | Recepcionista, gerente: carga un consumo del catálogo o libre (huésped alojado) |
+| POST | `/api/gestion/reservas/{codigo}/cargos/{id}/anular` | Recepcionista, gerente: anula un cargo con motivo |
+| POST | `/api/gestion/reservas/{codigo}/pagos` | Recepcionista, gerente: pago en caja, sin superar el saldo |
+| POST | `/api/gestion/reservas/{codigo}/check-out` | Recibe `metodo_pago` si hay saldo: lo cobra y emite la factura final |
+| GET | `/api/servicios` | Recepcionista, gerente (con `todos=true`, gerencia ve también los inactivos) |
+| POST/PATCH | `/api/servicios`, `/api/servicios/{id}` | Gerente: agrega, cambia, activa o desactiva servicios |
+| GET | `/api/reservas/{codigo}/cuenta` | Cliente titular: su cuenta, sin nombres del personal |
 | GET | `/api/solicitudes` | Personal, cada área lo suyo: bandeja; con `desde`, solo lo que cambió, y con `abierta` y `despues`, los mensajes nuevos de una conversación |
 | POST | `/api/solicitudes/{id}/mensajes` | Personal del área: responde al huésped |
 | PATCH | `/api/solicitudes/{id}` | Personal del área: tomar, pasar a otra área, resolver o reabrir |
@@ -877,6 +913,9 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - La regla `sin_traslape` impide la sobreventa incluso con solicitudes simultáneas.
   - La API usa un usuario con privilegios mínimos: no puede borrar reservas, alterar la bitácora ni cambiar tablas.
 - **Bitácora:** registra quién hizo qué, cuándo y desde qué réplica.
+- **Cuenta de la habitación:** la API puede registrar cargos, pagos y servicios, pero no borrarlos; de un cargo
+  solo puede escribir su anulación (quién, cuándo y por qué), y de una factura nunca cambia montos ni líneas.
+  Ningún pago en caja supera el saldo, y la salida no se registra con saldo pendiente sin cobrarlo.
 - **Chat con huéspedes:** solo escribe el titular de la reserva, durante su estadía y hasta 5 mensajes por
   minuto; un código ajeno responde igual que uno inexistente. Cada área del personal ve solo sus solicitudes. La
   API puede crear y leer solicitudes y mensajes, pero no editar ni borrar mensajes, ni cambiar a qué reserva
@@ -913,7 +952,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 163 pruebas automáticas. Cubren:
+`api/tests` contiene 179 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -941,6 +980,10 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 - Tablero de habitaciones: permisos, cada situación (incluido el día de cambio de huésped, la salida atrasada,
   la reserva sin pagar y la habitación fuera de servicio con una llegada), indicadores, cambios tras el ingreso y
   la salida, y un número fijo de consultas aunque crezcan las reservas.
+- Cuenta de la habitación: cargos del catálogo y libres, precio copiado al cargar, solo con el huésped alojado,
+  anulación con motivo, pagos parciales y excesivos, hospedaje pagado en línea o por agencia, salida que cobra el
+  saldo y emite la factura final aceptada por el simulador de Hacienda, convivencia con la factura del hospedaje,
+  vista del huésped, catálogo de gerencia y permisos de la base.
 - Solicitudes de huéspedes: una sola solicitud abierta por reserva, reserva por cuenta o por correo, código
   ajeno igual a inexistente, escritura solo durante la estadía, límite por minuto, mensajes inválidos, cada área
   ve lo suyo, conversación completa, tomar, reasignar y reabrir, consultas incrementales, número fijo de

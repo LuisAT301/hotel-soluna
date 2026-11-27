@@ -33,8 +33,8 @@ const VISTAS = {
   recepcionista: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones'],
   limpieza: ['solicitudes', 'habitaciones'],
   mantenimiento: ['solicitudes', 'habitaciones'],
-  gerente: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora',
-    'suscriptores'],
+  gerente: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'servicios',
+    'bitacora', 'suscriptores'],
 };
 
 // Formato de dinero en dólares con convenciones de Costa Rica, y atajo para buscar elementos
@@ -177,7 +177,7 @@ function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
   document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
   for (const nombre of ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios',
-    'bitacora', 'suscriptores']) {
+    'servicios', 'bitacora', 'suscriptores']) {
     $(`#sec-${nombre}`).hidden = !vista.includes(nombre);
   }
   $('#btn-entrar').hidden = Boolean(sesion.token);
@@ -192,6 +192,7 @@ function mostrarVista() {
   if (vista.includes('reservas')) intentar(cargarReservas);
   if (vista.includes('habitaciones')) intentar(cargarHabitaciones);
   if (vista.includes('usuarios')) intentar(cargarUsuarios);
+  if (vista.includes('servicios')) intentar(cargarCatalogoGerencia);   // definida en cuenta.js
   if (vista.includes('bitacora')) intentar(cargarBitacora);
   if (vista.includes('suscriptores')) intentar(cargarSuscriptores);
   if (vista.includes('buscar') && ultimaBusqueda) intentar(() => buscar(ultimaBusqueda));
@@ -293,6 +294,10 @@ async function cargarReservas() {
     // Durante la estadía, el huésped puede escribir al hotel (solicitudes.js)
     if (sesion.rol === 'cliente' && r.estado === 'en_curso') {
       botones.push(el('button', { clase: 'boton pequeno', type: 'button', onclick: () => abrirChat(r.codigo) }, 'Contactar al hotel'));
+    }
+    // Consumos cargados a la habitación y lo que queda por pagar al salir (cuenta.js)
+    if (sesion.rol === 'cliente' && ['en_curso', 'finalizada'].includes(r.estado)) {
+      botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => abrirMiCuenta(r.codigo) }, 'Mi cuenta'));
     }
     if (sesion.rol === 'cliente' && estadiaCumplida(r)) {
       botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => abrirResena(r.codigo) }, 'Opinar'));

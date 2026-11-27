@@ -1,6 +1,6 @@
 """Punto de entrada de la API del Hotel Soluna.
 
-Crea la aplicación FastAPI, le conecta los once grupos de rutas (routers) y
+Crea la aplicación FastAPI, le conecta los doce grupos de rutas (routers) y
 agrega un middleware que identifica la réplica que atendió cada solicitud.
 
 El mismo objeto ``app`` se ejecuta de dos maneras:
@@ -10,7 +10,7 @@ El mismo objeto ``app`` se ejecuta de dos maneras:
 from fastapi import FastAPI, Request
 
 from .dependencias import REPLICA
-from .routers import (auth, gestion, habitaciones, ota, pagos, publico, resenas, reservas, sistema,
+from .routers import (auth, cuentas, gestion, habitaciones, ota, pagos, publico, resenas, reservas, sistema,
                       solicitudes, usuarios)
 
 # La documentación interactiva (Swagger) queda bajo /api para que Nginx y los
@@ -30,12 +30,13 @@ app = FastAPI(
 #   reservas      disponibilidad, creación, consulta y cancelación
 #   gestion       recepción: tablero, búsqueda, check-in, check-out y cambios de reservas
 #   solicitudes   chat entre huéspedes alojados y el personal, con simulador de pedidos
+#   cuentas       cuenta de la habitación: consumos, pagos en caja y catálogo de servicios
 #   pagos         cobro con la pasarela, factura electrónica y reembolso
 #   ota           avisos firmados de la agencia de viajes en línea
 #   publico       datos del sitio (tipos de habitación) y suscripciones
 #   resenas       reseñas verificadas de huéspedes con una estadía cumplida
 #   sistema       salud del servicio y bitácora
-for modulo in (auth, usuarios, habitaciones, reservas, gestion, solicitudes, pagos, ota, publico, resenas,
+for modulo in (auth, usuarios, habitaciones, reservas, gestion, cuentas, solicitudes, pagos, ota, publico, resenas,
                sistema):
     app.include_router(modulo.router)
 

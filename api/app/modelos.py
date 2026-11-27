@@ -12,7 +12,7 @@ ejemplo ``reserva.habitacion.tipo.nombre``, sin escribir el JOIN a mano.
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, func
+from sqlalchemy import Computed, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -110,7 +110,10 @@ class Reserva(Base):
 
     habitacion: Mapped[Habitacion] = relationship(lazy="joined")
     # lazy="selectin": las facturas de varias reservas se traen en una sola consulta adicional
-    factura: Mapped["Factura | None"] = relationship(lazy="selectin", back_populates="reserva")
+    # Solo la factura del hospedaje pagado en línea; la de la cuenta final se consulta aparte
+    factura: Mapped["Factura | None"] = relationship(
+        lazy="selectin", viewonly=True,
+        primaryjoin="and_(Reserva.id == Factura.reserva_id, Factura.concepto == 'hospedaje')")
 
 
 class RegistroBitacora(Base):
@@ -151,8 +154,11 @@ class Pago(Base):
 
 
 class Factura(Base):
-    """Factura electrónica de una reserva pagada (como máximo una por reserva).
+    """Factura electrónica de una reserva: la del hospedaje pagado en línea o la de la cuenta final.
 
+    Hay como máximo una de cada concepto por reserva. La de la cuenta final
+    (lo cobrado en el hotel: hospedaje que se paga al llegar y consumos)
+    guarda sus líneas, para reenviarlas si Hacienda no respondió.
     ``estado`` empieza en "pendiente" y cambia a "aceptada" o "rechazada"
     cuando responde Hacienda.
     """
@@ -167,10 +173,12 @@ class Factura(Base):
     total: Mapped[Decimal]
     estado: Mapped[str] = mapped_column(default="pendiente")
     mensaje: Mapped[str | None]                  # respuesta de Hacienda
+    concepto: Mapped[str] = mapped_column(default="hospedaje")    # hospedaje o cuenta_final
+    lineas: Mapped[list | None] = mapped_column(JSONB)           # solo en la cuenta final
     emitida_en: Mapped[datetime] = mapped_column(server_default=func.now())
     respondida_en: Mapped[datetime | None]
 
-    reserva: Mapped[Reserva] = relationship(back_populates="factura")
+    reserva: Mapped[Reserva] = relationship()
 
 
 class Resena(Base):
@@ -234,4 +242,51 @@ class Mensaje(Base):
     autor: Mapped[str]                                             # huesped o personal
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))   # nulo: huésped simulado
     texto: Mapped[str]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Servicio(Base):
+    """Servicio del catálogo que se puede cargar a la cuenta de una habitación (precio sin IVA)."""
+    __tablename__ = "servicios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str]
+    categoria: Mapped[str]       # room_service, restaurante, bar, minibar, spa, lavanderia, transporte, tours, otros
+    precio: Mapped[Decimal]
+    activo: Mapped[bool] = mapped_column(default=True)
+
+
+class Cargo(Base):
+    """Consumo cargado a la cuenta de una reserva. No se borra: si fue un error, se anula con motivo.
+
+    Copia la descripción y el precio del catálogo al momento de cargarse;
+    ``total`` lo calcula la base (cantidad por precio unitario).
+    """
+    __tablename__ = "cargos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    servicio_id: Mapped[int | None] = mapped_column(ForeignKey("servicios.id"))
+    categoria: Mapped[str]
+    descripcion: Mapped[str]
+    cantidad: Mapped[int]
+    precio_unitario: Mapped[Decimal]
+    total: Mapped[Decimal] = mapped_column(Computed("cantidad * precio_unitario"))
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    creado_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    anulado_en: Mapped[datetime | None]
+    anulado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    motivo_anulacion: Mapped[str | None]
+
+
+class PagoCaja(Base):
+    """Pago recibido en la recepción para la cuenta de una reserva. No se edita ni se borra."""
+    __tablename__ = "pagos_caja"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    metodo: Mapped[str]          # efectivo, tarjeta, sinpe o transferencia
+    monto: Mapped[Decimal]
+    referencia: Mapped[str | None]
+    recibido_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
     creado_en: Mapped[datetime] = mapped_column(server_default=func.now())

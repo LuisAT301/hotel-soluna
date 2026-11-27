@@ -23,6 +23,8 @@
   <script src="/tablero.js" defer></script>
   <!-- Chat de solicitudes: bandeja del personal y chat del huésped -->
   <script src="/solicitudes.js" defer></script>
+  <!-- Cuenta de la habitación, catálogo de servicios y "Mi cuenta"; usa app.js y gestion.js -->
+  <script src="/cuenta.js" defer></script>
 </head>
 <body data-modo="sitio">
   <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
@@ -204,7 +206,7 @@
          buscar        público, clientes, recepción y gerencia
          reservas      clientes (las suyas), recepción y gerencia
          habitaciones  todo el personal
-         usuarios, bitacora y suscriptores  solo gerencia -->
+         usuarios, servicios, bitacora y suscriptores  solo gerencia (servicios: catálogo, en cuenta.js) -->
     <section id="reservar" class="bloque bloque-reservar">
       <div class="bloque-encabezado solo-sitio">
         <p class="antetitulo">Reservaciones</p>
@@ -358,6 +360,20 @@
           <button class="boton" type="submit">Crear cuenta</button>
         </form>
         <div id="lista-usuarios"></div>
+      </section>
+
+      <!-- Catálogo de servicios que se cargan a las habitaciones (gerencia, cuenta.js) -->
+      <section id="sec-servicios" class="tarjeta" hidden>
+        <h2>Catálogo de servicios</h2>
+        <p class="nota">Precios sin IVA. Cambiar un precio no altera lo ya cargado a las cuentas; un servicio
+          desactivado deja de ofrecerse, pero se conserva en las cuentas que ya lo tienen.</p>
+        <form id="form-servicio" class="fila">
+          <label class="crece">Servicio <input name="nombre" required minlength="2" maxlength="80"></label>
+          <label>Categoría <select name="categoria"></select></label>
+          <label>Precio (sin IVA) <input name="precio" type="number" min="0.01" step="0.01" required class="corto"></label>
+          <button class="boton" type="submit">Agregar</button>
+        </form>
+        <div id="lista-servicios"></div>
       </section>
 
       <section id="sec-bitacora" class="tarjeta" hidden>
@@ -578,6 +594,26 @@
         </div>
       </form>
 
+      <!-- Cuenta de la habitación (cuenta.js): totales, consumos, pagos y factura final -->
+      <section id="gestion-cuenta" class="cuenta" aria-labelledby="cuenta-titulo">
+        <h3 id="cuenta-titulo">Cuenta de la habitación</h3>
+        <div id="cuenta-contenido"></div>
+        <form id="form-cargo" class="fila cargo" hidden>
+          <label class="crece">Consumo <select name="servicio_id" required></select></label>
+          <label>Cantidad <input name="cantidad" type="number" min="1" max="99" value="1" required class="corto"></label>
+          <label class="crece solo-libre" hidden>Descripción <input name="descripcion" maxlength="120"></label>
+          <label class="solo-libre" hidden>Categoría <select name="categoria"></select></label>
+          <label class="solo-libre" hidden>Precio (sin IVA) <input name="precio_unitario" type="number" min="0.01" step="0.01" class="corto"></label>
+          <button class="boton" type="submit">Cargar a la habitación</button>
+        </form>
+        <form id="form-pago-caja" class="fila pago-caja" hidden>
+          <label>Monto <input name="monto" type="number" min="0.01" step="0.01" required class="corto"></label>
+          <label>Método <select name="metodo"></select></label>
+          <label class="crece">Referencia (voucher o comprobante) <input name="referencia" maxlength="60" autocomplete="off"></label>
+          <button class="boton claro" type="submit">Registrar pago</button>
+        </form>
+      </section>
+
       <h3>Historial</h3>
       <ol id="gestion-historial" class="historial"></ol>
       <div class="acciones">
@@ -617,6 +653,23 @@
           placeholder="Por ejemplo: ¿nos pueden traer dos toallas más?"></textarea>
         <button class="boton" type="submit">Enviar</button>
       </form>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Cuenta de la estadía vista por el huésped (cuenta.js): consumos, pagos y por pagar a la salida -->
+  <dialog id="dlg-mi-cuenta" class="ancho" aria-labelledby="mi-cuenta-titulo">
+    <div class="gestion">
+      <div class="encabezado">
+        <h2 id="mi-cuenta-titulo">Mi cuenta</h2>
+        <code id="mi-cuenta-codigo"></code>
+      </div>
+      <p class="nota sin-margen">Lo que se ha cargado a su habitación y lo que queda por pagar al salir. Si ve un
+        cargo que no reconoce, escríbanos con "Contactar al hotel".</p>
+      <div id="mi-cuenta-contenido" class="cuenta"></div>
+      <p id="error-mi-cuenta" class="aviso error" role="alert" hidden></p>
       <div class="acciones">
         <button class="boton claro" type="button" data-cerrar>Cerrar</button>
       </div>

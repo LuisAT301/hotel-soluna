@@ -5,10 +5,11 @@
   Clave (50 dígitos): país "506" (3) + fecha DDMMAA (6) + cédula del emisor (12)
       + consecutivo (20) + situación "1" = normal (1) + código de seguridad (8).
 
-Flujo: ``crear`` registra la factura en la base dentro de la transacción del
-pago; después ``enviar_a_hacienda`` la manda al simulador y guarda la
-respuesta. Si Hacienda no contesta, la factura queda pendiente y el pago no
-se pierde.
+Flujo: ``crear`` (hospedaje pagado en línea) o ``crear_cuenta_final`` (lo
+cobrado en el hotel al registrar la salida) registran la factura en la base
+dentro de la transacción del pago; después ``enviar_a_hacienda`` la manda al
+simulador y guarda la respuesta. Si Hacienda no contesta, la factura queda
+pendiente y el pago no se pierde.
 """
 import secrets
 from datetime import datetime, timezone
@@ -59,9 +60,24 @@ def crear(sesion: Session, reserva: Reserva) -> Factura:
     al mismo tiempo. ``flush`` envía el INSERT sin confirmar la transacción,
     para obtener el id de la factura antes del commit.
     """
+    return _nueva_factura(sesion, reserva, reserva.total, "hospedaje", None)
+
+
+def crear_cuenta_final(sesion: Session, reserva: Reserva, lineas: list[dict], subtotal: Decimal) -> Factura:
+    """Registra la factura de la cuenta final: lo cobrado en el hotel, con una línea por concepto.
+
+    ``lineas`` son diccionarios con detalle, cantidad, precio_unitario y
+    subtotal (montos como texto); deben sumar ``subtotal``. El IVA se calcula
+    sobre el subtotal completo, como lo revisa Hacienda.
+    """
+    return _nueva_factura(sesion, reserva, subtotal, "cuenta_final", lineas)
+
+
+def _nueva_factura(sesion: Session, reserva: Reserva, subtotal: Decimal, concepto: str,
+                   lineas: list[dict] | None) -> Factura:
+    """Crea una factura con el siguiente consecutivo de la secuencia y su clave numérica."""
     numero = sesion.execute(text("SELECT nextval('consecutivo_factura')")).scalar_one()
     consec = consecutivo(numero)
-    subtotal = reserva.total
     impuesto = impuesto_de(subtotal)
     factura = Factura(
         reserva_id=reserva.id,
@@ -70,6 +86,8 @@ def crear(sesion: Session, reserva: Reserva) -> Factura:
         subtotal=subtotal,
         impuesto=impuesto,
         total=subtotal + impuesto,
+        concepto=concepto,
+        lineas=lineas,
     )
     sesion.add(factura)
     sesion.flush()
@@ -81,22 +99,24 @@ def enviar_a_hacienda(sesion: Session, factura: Factura) -> None:
     "pendiente" y se reintenta la próxima vez que alguien la consulte."""
     reserva = factura.reserva
     noches = (reserva.fecha_salida - reserva.fecha_entrada).days
-    # Una sola línea por la estadía completa: la tarifa por noche puede
-    # cambiar de temporada a mitad de la reserva.
+    # Hospedaje en línea: una sola línea por la estadía completa (la tarifa por
+    # noche puede cambiar de temporada a mitad de la reserva). Cuenta final:
+    # las líneas que se guardaron al emitirla.
+    lineas = factura.lineas if factura.concepto == "cuenta_final" else [{
+        "detalle": (f"Hospedaje en habitación {reserva.habitacion.tipo.nombre}, {noches} "
+                    f"{'noche' if noches == 1 else 'noches'}, del {reserva.fecha_entrada:%d/%m/%Y} "
+                    f"al {reserva.fecha_salida:%d/%m/%Y} (reserva {reserva.codigo})"),
+        "cantidad": 1,
+        "precio_unitario": str(factura.subtotal),
+        "subtotal": str(factura.subtotal),
+    }]
     comprobante = {
         "clave": factura.clave,
         "consecutivo": factura.consecutivo,
         "fecha_emision": factura.emitida_en.isoformat(),
         "emisor": {"nombre": config.EMISOR_NOMBRE, "identificacion": config.EMISOR_CEDULA},
         "receptor": {"nombre": reserva.nombre_huesped, "correo": reserva.correo_huesped},
-        "lineas": [{
-            "detalle": (f"Hospedaje en habitación {reserva.habitacion.tipo.nombre}, {noches} "
-                        f"{'noche' if noches == 1 else 'noches'}, del {reserva.fecha_entrada:%d/%m/%Y} "
-                        f"al {reserva.fecha_salida:%d/%m/%Y} (reserva {reserva.codigo})"),
-            "cantidad": 1,
-            "precio_unitario": str(factura.subtotal),
-            "subtotal": str(factura.subtotal),
-        }],
+        "lineas": lineas,
         # Los montos viajan como texto para no perder precisión decimal en JSON
         "subtotal": str(factura.subtotal),
         "impuesto": str(factura.impuesto),

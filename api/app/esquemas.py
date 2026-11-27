@@ -10,7 +10,7 @@ respuesta directamente desde un objeto de la base de datos.
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 import email_validator
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -462,3 +462,165 @@ class ChatHuesped(BaseModel):
     puede_escribir: bool          # solo durante la estadía (reserva en curso)
     abierta: SolicitudBreve | None
     mensajes: list[MensajeSalida]
+
+
+# ---------------------------------------------------------------------
+# Cuenta de la habitación: consumos, pagos en caja y factura final (etapa 5)
+# ---------------------------------------------------------------------
+CategoriaServicio = Literal["room_service", "restaurante", "bar", "minibar", "spa", "lavanderia", "transporte",
+                            "tours", "otros"]
+MetodoPago = Literal["efectivo", "tarjeta", "sinpe", "transferencia"]
+Dinero = Annotated[Decimal, Field(gt=0, max_digits=10, decimal_places=2)]
+
+
+def _texto_limpio(valor: str | None) -> str | None:
+    """Recorta espacios y une los repetidos; una cadena vacía equivale a no indicarla."""
+    if valor is None:
+        return None
+    valor = " ".join(valor.split())
+    return valor or None
+
+
+class ServicioSalida(BaseModel):
+    """Servicio del catálogo, con su precio sin IVA."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nombre: str
+    categoria: CategoriaServicio
+    precio: Decimal
+    activo: bool
+
+
+class NuevoServicio(BaseModel):
+    """Servicio nuevo que gerencia agrega al catálogo."""
+    nombre: str = Field(min_length=2, max_length=80)
+    categoria: CategoriaServicio
+    precio: Dinero
+
+    @field_validator("nombre")
+    @classmethod
+    def nombre_limpio(cls, valor: str) -> str:
+        """Recorta y une los espacios del nombre."""
+        return _texto_limpio(valor) or valor
+
+
+class CambioServicio(BaseModel):
+    """Cambios de gerencia a un servicio; los campos omitidos no cambian."""
+    nombre: str | None = Field(default=None, min_length=2, max_length=80)
+    categoria: CategoriaServicio | None = None
+    precio: Dinero | None = None
+    activo: bool | None = None
+
+
+class NuevoCargo(BaseModel):
+    """Consumo que se carga a la cuenta: del catálogo (``servicio_id``) o libre (descripción, categoría y precio)."""
+    servicio_id: int | None = None
+    cantidad: int = Field(default=1, ge=1, le=99)
+    descripcion: str | None = Field(default=None, max_length=120)
+    categoria: CategoriaServicio | None = None
+    precio_unitario: Dinero | None = None
+
+    @field_validator("descripcion")
+    @classmethod
+    def descripcion_limpia(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; vacía equivale a no indicarla."""
+        return _texto_limpio(valor)
+
+
+class AnulacionCargo(BaseModel):
+    """Motivo por el que se anula un cargo (queda en la cuenta y en la bitácora)."""
+    motivo: str = Field(min_length=3, max_length=200)
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_limpio(cls, valor: str) -> str:
+        """Recorta y une los espacios; un motivo de solo espacios no cuenta."""
+        valor = _texto_limpio(valor) or ""
+        if len(valor) < 3:
+            raise ValueError("Indique el motivo de la anulación (al menos 3 caracteres)")
+        return valor
+
+
+class NuevoPagoCaja(BaseModel):
+    """Pago recibido en la recepción."""
+    monto: Dinero
+    metodo: MetodoPago
+    referencia: str | None = Field(default=None, max_length=60)   # número de voucher o de comprobante
+
+    @field_validator("referencia")
+    @classmethod
+    def referencia_limpia(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; vacía equivale a no indicarla."""
+        return _texto_limpio(valor)
+
+
+class SalidaHuesped(BaseModel):
+    """Datos opcionales del check-out: con qué se cobra el saldo pendiente, si lo hay."""
+    metodo_pago: MetodoPago | None = None
+    referencia: str | None = Field(default=None, max_length=60)
+
+    @field_validator("referencia")
+    @classmethod
+    def referencia_limpia(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; vacía equivale a no indicarla."""
+        return _texto_limpio(valor)
+
+
+class CargoSalida(BaseModel):
+    """Un consumo de la cuenta. ``creado_por`` es nulo cuando la cuenta la ve el huésped."""
+    id: int
+    categoria: CategoriaServicio
+    descripcion: str
+    cantidad: int
+    precio_unitario: Decimal
+    total: Decimal
+    creado_en: datetime
+    creado_por: str | None
+    anulado: bool
+    motivo_anulacion: str | None
+
+
+class PagoCajaSalida(BaseModel):
+    """Un pago recibido en la recepción."""
+    id: int
+    metodo: MetodoPago
+    monto: Decimal
+    referencia: str | None
+    creado_en: datetime
+    recibido_por: str | None
+
+
+class FacturaFinalSalida(BaseModel):
+    """La factura electrónica de la cuenta final, emitida al registrar la salida."""
+    consecutivo: str
+    clave: str
+    estado: str
+    total: Decimal
+    emitida_en: datetime
+
+
+class CuentaSalida(BaseModel):
+    """Estado de cuenta de una reserva: lo que se cobra en el hotel, lo pagado y lo pendiente.
+
+    ``hospedaje_modalidad`` dice cómo se paga la estadía: en línea (ya
+    pagada), por la agencia (OTA), en el hotel (recepción o teléfono) o
+    nada si se canceló. Solo en el último caso el hospedaje suma a la
+    cuenta. ``por_pagar`` es lo que falta cobrar a la salida; ``a_favor``,
+    lo pagado de más si se anuló un cargo ya pagado.
+    """
+    codigo: str
+    estado: str
+    hospedaje_modalidad: Literal["en_linea", "agencia", "en_hotel", "cancelada"]
+    hospedaje: Decimal            # hospedaje que se cobra en el hotel, sin IVA (0 si no aplica)
+    consumos: Decimal             # cargos vigentes, sin IVA
+    subtotal: Decimal
+    impuesto: Decimal             # IVA del 13 % sobre el subtotal
+    total: Decimal
+    pagado: Decimal
+    por_pagar: Decimal
+    a_favor: Decimal
+    puede_cargar: bool            # huésped alojado: se le pueden cargar consumos
+    cargos: list[CargoSalida]
+    pagos: list[PagoCajaSalida]
+    factura_final: FacturaFinalSalida | None

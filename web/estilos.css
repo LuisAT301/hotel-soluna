@@ -607,6 +607,36 @@ label.en-linea select { min-width: 0; padding: 5px 8px; }
 .resumen-reserva .alerta { color: #8E3524; font-weight: 600; }
 
 /* =====================================================================
+   Cuenta de la habitación (cuenta.js): totales, consumos, pagos y catálogo
+   ===================================================================== */
+.cuenta { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--borde); padding-top: 12px; }
+.cuenta h4 { margin: 4px 0 0; font-size: .92rem; color: var(--oceano); }
+.cuenta-totales {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 4px 18px;
+  margin: 0;
+  padding: 10px 14px;
+  background: #FBF8F2;
+  border-radius: var(--radio);
+  font-size: .92rem;
+  justify-content: start;
+}
+.cuenta-totales dt { color: var(--gris); }
+.cuenta-totales dd { margin: 0; text-align: right; }
+.cuenta-totales .por-pagar { border-top: 1px solid var(--borde); padding-top: 6px; font-weight: 700; color: var(--oceano); font-size: 1rem; }
+.cuenta .tabla-contenedor { max-height: 240px; overflow-y: auto; }
+.cuenta table { font-size: .86rem; }
+.anulado { text-decoration: line-through; color: var(--gris); }
+.pagos-caja { margin: 0; padding-left: 18px; font-size: .86rem; color: var(--texto); }
+.fila.cargo, .fila.pago-caja { margin: 0; align-items: flex-end; }
+/* Dentro de un diálogo, los formularios en fila siguen en fila (la regla general de diálogo los apila) */
+dialog form.fila { flex-direction: row; align-items: flex-end; }
+dialog form.fila .crece { flex: 1 1 220px; }
+input.corto { min-width: 0; width: 7.5em; }
+input.precio-corto { min-width: 0; width: 7em; padding: 5px 8px; }
+
+/* =====================================================================
    Pantallas angostas
    ===================================================================== */
 /* Tabletas: el menú se convierte en un panel desplegable que abre el botón ☰ */

@@ -25,7 +25,11 @@ const ACCIONES_BITACORA = {
   check_out: 'Salida del huésped (check-out)',
   modificar_reserva: 'Reserva modificada',
   publicar_resena: 'Reseña publicada',
+  cargar_consumo: 'Consumo cargado a la habitación',
+  anular_cargo: 'Cargo anulado',
+  pago_caja: 'Pago recibido en recepción',
 };
+const METODOS_BITACORA = { efectivo: 'efectivo', tarjeta: 'tarjeta', sinpe: 'SINPE Móvil', transferencia: 'transferencia' };
 
 // Texto cuando una vista no tiene reservas
 const SIN_RESULTADOS = {
@@ -123,6 +127,7 @@ async function intentarEnDialogo(accion) {
 /** Abre el diálogo con los datos, las acciones posibles hoy y el historial de la reserva. */
 async function abrirGestion(codigo) {
   gestionActual = await api(`/api/gestion/reservas/${encodeURIComponent(codigo)}`);
+  cuentaGestion = null;   // cuenta.js la carga enseguida
   const { reserva: r } = gestionActual;
   $('#gestion-codigo').textContent = r.codigo;
   $('#gestion-estado').replaceChildren(etiquetaEstado(r.estado, ESTADOS));
@@ -133,6 +138,7 @@ async function abrirGestion(codigo) {
   mostrarHistorial();
   const dialogo = $('#dlg-gestion');
   if (!dialogo.open) dialogo.showModal();
+  await cargarCuentaGestion(r.codigo);   // cuenta de la habitación (cuenta.js)
 }
 
 /** Datos de la reserva: huésped, habitación con su estado de limpieza, estadía y pago. */
@@ -155,6 +161,8 @@ function mostrarFicha() {
     ['Personas', String(r.personas)],
     ['Canal', CANALES[r.canal] || r.canal],
     ['Total con IVA', `${dinero.format(Number(r.total_con_impuesto))} · ${pago}`],
+    // La llena cuenta.js con el saldo de la cuenta de la habitación
+    ['Por pagar a la salida', el('span', { id: 'ficha-por-pagar' }, 'Calculando…')],
   ];
   $('#gestion-datos').replaceChildren(...filas.flatMap(([dt, dd]) => [el('dt', {}, dt), el('dd', {}, dd)]));
 }
@@ -167,7 +175,9 @@ function mostrarAcciones() {
     botones.push(el('button', { clase: 'boton', type: 'button', onclick: () => intentarEnDialogo(registrarIngreso) }, 'Registrar ingreso'));
   }
   if (acciones.includes('check_out')) {
-    botones.push(el('button', { clase: 'boton', type: 'button', onclick: () => intentarEnDialogo(registrarSalida) }, 'Registrar salida'));
+    const saldo = cuentaGestion && cuentaGestion.codigo === gestionActual.reserva.codigo ? Number(cuentaGestion.por_pagar) : 0;
+    const texto = saldo > 0 ? `Cobrar ${dinero.format(saldo)} y registrar salida` : 'Registrar salida';
+    botones.push(el('button', { clase: 'boton', type: 'button', onclick: () => intentarEnDialogo(registrarSalida) }, texto));
   }
   if (acciones.includes('modificar')) {
     botones.push(el('button', { clase: 'boton claro', type: 'button', onclick: () => intentarEnDialogo(abrirModificar) }, 'Modificar'));
@@ -194,8 +204,15 @@ function resumenEvento(e) {
       .map((campo) => `${nombres[campo]}: ${formato(campo, d.antes[campo])} → ${formato(campo, d.despues[campo])}`)
       .join('; ');
   }
-  if (e.accion === 'check_out' && d.salida_prevista) {
-    return `habitación ${d.habitacion}; salida anticipada (estaba prevista para el ${fechaCorta(d.salida_prevista)})`;
+  if (e.accion === 'cargar_consumo') return `${d.cantidad} × ${d.descripcion}: ${dinero.format(Number(d.total))} sin IVA`;
+  if (e.accion === 'anular_cargo') return `${d.descripcion} (${dinero.format(Number(d.total))}); motivo: ${d.motivo}`;
+  if (e.accion === 'pago_caja') return `${dinero.format(Number(d.monto))} con ${METODOS_BITACORA[d.metodo] || d.metodo}`;
+  if (e.accion === 'check_out') {
+    const partes = [`habitación ${d.habitacion}`];
+    if (d.salida_prevista) partes.push(`salida anticipada (estaba prevista para el ${fechaCorta(d.salida_prevista)})`);
+    if (d.cobrado) partes.push(`cobrados ${dinero.format(Number(d.cobrado))} con ${METODOS_BITACORA[d.metodo_pago] || d.metodo_pago}`);
+    if (d.factura_final) partes.push(`factura final ${d.factura_final}`);
+    return partes.join('; ');
   }
   if (d.habitacion) return `habitación ${d.habitacion}`;
   if (d.monto) return dinero.format(Number(d.monto));
@@ -230,13 +247,19 @@ async function registrarIngreso() {
 /** Registra la salida; si es antes de lo previsto, explica que las noches restantes se liberan. */
 async function registrarSalida() {
   const { codigo, fecha_salida: salida, habitacion } = gestionActual.reserva;
-  const pregunta = salida > hoyISO()
+  // Si queda saldo, se cobra con el método elegido en el formulario de pago de la cuenta (cuenta.js)
+  const saldo = cuentaGestion ? Number(cuentaGestion.por_pagar) : 0;
+  const cobro = saldo > 0 ? cobroDeSalida() : null;
+  let pregunta = salida > hoyISO()
     ? `La salida estaba prevista para el ${fechaCorta(salida)}. ¿Registrar la salida anticipada? `
       + 'Las noches restantes quedarán libres y el monto no cambia.'
     : `¿Registrar la salida de la habitación ${habitacion}?`;
+  if (cobro) pregunta += `\n\nSe cobrarán ${dinero.format(saldo)} con ${METODOS_PAGO[cobro.metodo_pago].toLowerCase()} `
+    + 'y se emitirá la factura electrónica final.';
   if (!window.confirm(pregunta)) return;
-  await api(`/api/gestion/reservas/${encodeURIComponent(codigo)}/check-out`, { metodo: 'POST' });
-  avisar(`Salida registrada: ${codigo}. La habitación ${habitacion} quedó pendiente de limpieza.`);
+  await api(`/api/gestion/reservas/${encodeURIComponent(codigo)}/check-out`, { metodo: 'POST', json: cobro || {} });
+  avisar(`Salida registrada: ${codigo}${cobro ? `, cobrados ${dinero.format(saldo)}` : ''}. `
+    + `La habitación ${habitacion} quedó pendiente de limpieza.`);
   await Promise.all([abrirGestion(codigo), refrescarPanel()]);
 }
 

@@ -86,6 +86,12 @@ El número de la tarjeta viaja del navegador a la pasarela y nunca llega a la AP
 Esta separación reduce el alcance de los controles exigidos para datos de tarjetas, porque el sistema del
 hotel solo maneja un token sin valor fuera de la pasarela (PCI Security Standards Council, 2022).
 
+Lo que se cobra en el hotel sigue otro camino. Durante la estadía, recepción carga los consumos a la cuenta de la
+habitación; al registrar la salida, la API cobra el saldo con el método elegido y emite una segunda factura
+electrónica, la de la cuenta final, con una línea por concepto. Las líneas quedan guardadas con la factura, de
+modo que, si Hacienda no responde, se reenvían idénticas más tarde. Cargos, pagos y facturas no se borran ni se
+editan: un error se corrige con una anulación que deja rastro.
+
 ## 5. Decisiones de diseño
 
 **Funciones sin estado.** En Vercel cada solicitud puede atenderla una instancia distinta, y las instancias
@@ -222,7 +228,7 @@ factura aceptada, pago repetido, cancelación con reembolso, protección del pan
 servicios, el registro en Hacienda y el aviso firmado de la OTA. Cancela al final las reservas que crea.
 
 En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con una mediana de 227 ms y un
-máximo de 605 ms por paso. Las 163 pruebas automáticas de `api/tests` cubren, además, los casos que no
+máximo de 605 ms por paso. Las 179 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
 ### 9.1. Prueba de carga

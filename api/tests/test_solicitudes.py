@@ -257,7 +257,8 @@ def test_la_salida_cierra_las_solicitudes_abiertas(cliente_http, admin_db, clien
     """Al registrar la salida, la solicitud abierta queda resuelta y el huésped ya no puede escribir."""
     codigo = alojada(admin_db)
     escribir(cliente_http, cliente, codigo)
-    assert cliente_http.post(f"/api/gestion/reservas/{codigo}/check-out", headers=recepcion).status_code == 200
+    assert cliente_http.post(f"/api/gestion/reservas/{codigo}/check-out", headers=recepcion,
+                             json={"metodo_pago": "efectivo"}).status_code == 200
     estado = admin_db.execute("SELECT estado, pendiente_desde FROM solicitudes").fetchone()
     assert estado == ("resuelta", None)
     assert escribir(cliente_http, cliente, codigo).status_code == 409

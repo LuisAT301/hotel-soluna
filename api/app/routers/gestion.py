@@ -41,13 +41,14 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import config, correo
+from .. import config, correo, facturacion
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol
 from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, HabitacionEnTablero,
-                        ReservaEnTablero, ReservaSalida, ResumenTablero, Tablero, VistaRecepcion)
+                        ReservaEnTablero, ReservaSalida, ResumenTablero, SalidaHuesped, Tablero, VistaRecepcion)
 from ..facturacion import impuesto_de
-from ..modelos import Habitacion, Pago, RegistroBitacora, Reserva, Solicitud, Usuario
+from ..modelos import Habitacion, Pago, PagoCaja, RegistroBitacora, Reserva, Solicitud, Usuario
+from .cuentas import CERO, cuenta_de, lineas_cuenta_final, texto_cuenta
 from .reservas import (CANALES_PAGO_EN_HOTEL, ESTADOS_CANCELABLES, MAX_NOCHES, bloque_pago_en_hotel,
                        buscar_reserva, calcular_total, garantia_hasta, habitaciones_libres, hoy, salida_reserva)
 
@@ -363,26 +364,50 @@ def check_in(codigo: str, sesion: Session = Depends(obtener_sesion), usuario: Us
 
 
 @router.post("/reservas/{codigo}/check-out", response_model=ReservaSalida)
-def check_out(codigo: str, tareas: BackgroundTasks, sesion: Session = Depends(obtener_sesion),
-              usuario: Usuario = Depends(RECEPCION)):
-    """Registra la salida: la reserva pasa a finalizada y la habitación queda sucia para limpieza.
+def check_out(codigo: str, tareas: BackgroundTasks, datos: SalidaHuesped | None = None,
+              sesion: Session = Depends(obtener_sesion), usuario: Usuario = Depends(RECEPCION)):
+    """Registra la salida: cobra la cuenta, emite la factura final y deja la habitación sucia para limpieza.
 
-    Las solicitudes del huésped que seguían abiertas se resuelven en la misma transacción.
+    Algoritmo, en una sola transacción:
+      1. Calcula la cuenta. Si queda saldo, exige el método de pago (409 si
+         falta) y registra el cobro por el saldo exacto.
+      2. Si hubo algo que cobrar en el hotel (hospedaje que se paga al llegar
+         o consumos), emite la factura electrónica final con una línea por
+         concepto. Se envía a Hacienda después de confirmar la transacción.
+      3. Cierra las solicitudes abiertas, marca la habitación sucia y
+         finaliza la reserva.
 
     Si el huésped se va antes de lo previsto, la salida se adelanta a hoy (o
     al día siguiente de la entrada, si llegó hoy) y las noches restantes
     quedan libres para otros huéspedes. El monto no cambia. Al final se le
-    envía un correo de agradecimiento que lo invita a dejar una reseña.
+    envía un correo de agradecimiento con el resumen de su cuenta y la
+    invitación a dejar una reseña.
     """
     reserva = buscar_reserva(sesion, codigo, usuario, bloquear=True)
     if reserva.estado != "en_curso":
         raise conflicto(f"Solo se registra la salida de una estadía en curso; esta reserva está "
                         f"{EN_FRASE[reserva.estado]}.")
-    dia = hoy()
+    cuenta = cuenta_de(sesion, reserva)
     extra = {}
+    if cuenta.por_pagar > CERO:
+        if not (datos and datos.metodo_pago):
+            raise conflicto(f"La cuenta tiene un saldo pendiente de USD {cuenta.por_pagar}. Indique el método de "
+                            "pago para cobrarlo al registrar la salida.")
+        sesion.add(PagoCaja(reserva_id=reserva.id, metodo=datos.metodo_pago, monto=cuenta.por_pagar,
+                            referencia=datos.referencia, recibido_por=usuario.id))
+        extra["cobrado"] = str(cuenta.por_pagar)
+        extra["metodo_pago"] = datos.metodo_pago
+    dia = hoy()
     if dia < reserva.fecha_salida:
         extra["salida_prevista"] = str(reserva.fecha_salida)
         reserva.fecha_salida = max(dia, reserva.fecha_entrada + timedelta(days=1))
+
+    # Factura final por lo cobrado en el hotel (si no se emitió antes)
+    factura = None
+    if cuenta.subtotal > CERO and cuenta.factura_final is None:
+        lineas, subtotal = lineas_cuenta_final(sesion, reserva)
+        factura = facturacion.crear_cuenta_final(sesion, reserva, lineas, subtotal)
+        extra["factura_final"] = factura.consecutivo
 
     habitacion = bloquear_habitacion(sesion, reserva.habitacion_id)
     habitacion.estado_limpieza = "sucia"
@@ -396,11 +421,15 @@ def check_out(codigo: str, tareas: BackgroundTasks, sesion: Session = Depends(ob
     registrar(sesion, usuario, "check_out", "reserva", reserva.codigo, habitacion=habitacion.numero, **extra)
     sesion.commit()
     sesion.refresh(reserva)
+    # El cobro y la factura ya quedaron guardados; si Hacienda no responde, la factura queda pendiente
+    if factura is not None:
+        facturacion.enviar_a_hacienda(sesion, factura)
 
     correo.programar(
         tareas, reserva.correo_huesped, "Gracias por hospedarse en el Hotel Soluna",
         f"Hola, {reserva.nombre_huesped}:\n\nRegistramos su salida de la habitación {habitacion.numero}. "
         f"Gracias por elegirnos; esperamos recibirle de nuevo en Playa Sámara.\n\n"
+        f"{texto_cuenta(cuenta_de(sesion, reserva, para_huesped=True))}\n"
         f"Si desea contar su experiencia, puede escribir una reseña en la sección Reseñas de nuestro sitio "
         f"web con el código {reserva.codigo}. Para opinar necesita una cuenta de cliente con este mismo "
         f"correo.\n")
