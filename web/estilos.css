@@ -690,3 +690,16 @@ input.precio-corto { min-width: 0; width: 7em; padding: 5px 8px; }
   #sec-tablero .encabezado .botones-fila { width: 100%; justify-content: space-between; }
   .indicadores { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Comprobantes de pago (etapa 6) */
+.nota-rechazo { display: block; color: #8E3524; max-width: 28ch; }
+.lista-simple { margin: 0 0 8px; padding-left: 18px; font-size: .9rem; color: var(--gris); }
+.dialogo-archivo { width: min(92vw, 820px); }
+.archivo-vista { display: flex; justify-content: center; background: var(--arena); border-radius: 8px;
+  padding: 8px; margin: 8px 0; }
+.archivo-vista img { max-width: 100%; max-height: 70vh; object-fit: contain; }
+.archivo-vista iframe { width: 100%; height: 70vh; border: 0; background: #fff; }
+
+#dlg-comprobante .montos { grid-template-columns: max-content 1fr; column-gap: 16px; }
+#dlg-comprobante .montos dd { overflow-wrap: anywhere; }
+#comp-codigo { white-space: nowrap; }

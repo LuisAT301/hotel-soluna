@@ -361,6 +361,43 @@ servicios** o como cargo libre, con descripción, categoría y precio.
 
 Una reserva puede tener dos facturas: la del hospedaje pagado en línea y la de la cuenta final.
 
+### Pago por SINPE Móvil o transferencia con comprobante
+
+Ninguna pasarela confirma un SINPE Móvil o una transferencia: los confirma una persona que revisa la cuenta del
+hotel. Por eso, además de la tarjeta, el cliente puede pagar por su cuenta y enviar el comprobante, que recepción
+revisa:
+
+1. **El cliente**, en **Mis reservas**, pulsa **SINPE o transferencia** en una reserva pendiente de pago. Ve el
+   monto exacto con IVA y los datos del hotel, que son de demostración (`SINPE_HOTEL`, `CUENTA_HOTEL`,
+   `TITULAR_CUENTA_HOTEL`), y envía el número del comprobante, el monto y, si quiere, una imagen o un PDF. El
+   navegador comprime la imagen: una foto de 8 MB queda en unos 400 KB. La reserva muestra **Comprobante en
+   revisión** y no se puede pagar con tarjeta mientras tanto.
+2. **Recepción** ve la sección **Comprobantes de pago**, con un contador, la reserva, el monto esperado y el
+   archivo. **Aceptar** registra el pago, confirma la reserva y emite la factura electrónica, igual que un pago
+   con tarjeta. **Rechazar** pide un motivo; el cliente lo ve en Mis reservas y puede enviar otro comprobante.
+
+Cada paso queda respaldado con un correo:
+
+| Momento | Destinatario | Asunto |
+|---|---|---|
+| El cliente envía el comprobante | Cliente | Recibimos su comprobante de pago |
+| El cliente envía el comprobante | Buzón de recepción (`CORREO_RECEPCION`; por omisión, el remitente) | Comprobante por revisar |
+| Recepción lo acepta | Cliente | Reserva confirmada, con la factura |
+| Recepción lo rechaza | Cliente | No pudimos confirmar su pago, con el motivo |
+
+Además, cada paso queda en la bitácora y en el historial de la reserva. Reglas que aplica la API y, varias, la
+base de datos:
+
+- **Un comprobante en revisión por reserva**, con el monto exacto de la reserva con IVA.
+- **Número único por método:** un mismo comprobante no respalda dos pagos; uno rechazado sí puede reenviarse.
+- **Archivo verificado por su contenido**, no por su nombre: solo JPG, PNG o PDF, de 1,5 MB como máximo. Recepción
+  lo ve desde el panel, sin que quede guardado en la caché del navegador.
+- **Nada se borra:** la API no puede borrar comprobantes ni cambiar lo que envió el cliente. El mantenimiento
+  borra la imagen 90 días después de revisada y conserva el registro como respaldo del pago.
+- **Cancelación:** si el cliente cancela antes de la revisión, el comprobante queda sin efecto. Si ya estaba
+  pagada, la devolución no pasa por la pasarela: queda registrada y el correo indica que se hará por el mismo
+  medio.
+
 ## Demostraciones del bloque 2
 
 ```bash
@@ -624,15 +661,18 @@ simulador. La función `hotel.mantenimiento()` los recorta con esta política:
 | Historial de `pg_cron` (`cron.job_run_details`) | Más de 7 días | Más de 3 días |
 | Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
 | Solicitudes de huéspedes resueltas, con sus mensajes | Más de 90 días | Más de 30 días |
+| Imágenes de comprobantes de pago ya revisados (el registro se conserva) | Más de 90 días | Más de 30 días |
 
-`pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye una tercera tarea programada, que no limpia
-la base sino que libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*).
+`pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye otras dos tareas programadas que no limpian la
+base: una libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*) y la
+otra mueve la simulación de huéspedes (ver *Historial simulado*).
 
 | Tarea | Cuándo | Qué hace |
 |---|---|---|
 | `soluna-vigilar-ocupacion` | Cada hora (minuto 47) | Mide la base; si la ocupación es alta, limpia de inmediato |
 | `soluna-limpieza-diaria` | Todos los días a las 03:17 de Costa Rica | Aplica la retención normal y deja constancia en la bitácora |
 | `soluna-liberar-no-presentados` | Cada hora (minuto 5) | Cancela las reservas que se pagan al llegar cuya garantía venció |
+| `soluna-simulacion` | Cada hora (minuto 20) | Registra la salida de los huéspedes simulados y limpia las habitaciones que dejaron |
 
 Los 365 días siguen el mínimo de 12 meses de conservación de la bitácora de PCI DSS 4.0 (requisito 10.5.1), y
 los 90 días, los 3 meses que esa norma pide mantener disponibles de inmediato. La ocupación alta es una medida
@@ -649,6 +689,37 @@ Para revisar el mantenimiento:
 - **Bitácora del hotel:** gerencia ve una entrada `mantenimiento` por día, con el tamaño de la base y lo borrado.
 - **A mano:** `SELECT hotel.mantenimiento();` en el editor SQL de Supabase. En Docker, donde no hay
   `pg_cron` ni límite de plan, `docker compose exec db psql -U postgres -d hotel -c "SELECT mantenimiento()"`.
+
+## Historial simulado (solo en Supabase)
+
+Para que el sistema publicado tenga movimiento y acumule un historial realista, Supabase aloja huéspedes
+ficticios que llegan, se hospedan y se van solos. Cada estadía simulada deja la misma huella que una real:
+
+- **Reserva y bitácora:** código, canal y su historial completo (creación o pago, ingreso y salida).
+- **Cobros y facturas:** las reservas en línea tienen su pago aprobado y su factura del hospedaje. Al salir, las
+  que se pagan en el hotel cobran el saldo y emiten la factura final, con una línea por concepto.
+- **Limpieza:** la habitación queda sucia al salir el huésped y, en el turno de limpieza (7:00 a 17:00), se marca
+  limpia unas dos horas después.
+
+Los nombres, los códigos y los correos son al azar, y los correos son siempre de dominios `.test`, a los que la API
+nunca escribe. La simulación vive en el esquema `simulacion`
+(`supabase/migrations/20261127175721_simulacion.sql`): el respaldo no lo copia, porque solo copia `hotel`. Solo
+actúa sobre las estadías registradas en `simulacion.estadias`, así que no toca las reservas reales ni las de
+prueba del personal. Si recepción registra a mano la salida de un huésped simulado, la simulación ya no lo toca;
+y si el personal cambia el estado de limpieza de una habitación, la simulación deja de limpiarla.
+
+En el editor SQL de Supabase:
+
+| Qué hacer | Instrucción |
+|---|---|
+| Agregar huéspedes que llegan hoy (por ejemplo, 8 que se van en los próximos 14 días) | `SELECT * FROM simulacion.nuevo_lote(8, 14);` |
+| Registrar ya las salidas vencidas, sin esperar la corrida horaria | `SELECT simulacion.registrar_salidas();` |
+| Ver las estadías simuladas en curso | `SELECT r.codigo, r.fecha_salida, e.hora_salida FROM hotel.reservas r JOIN simulacion.estadias e ON e.reserva_id = r.id WHERE r.estado = 'en_curso';` |
+| Borrar toda la simulación (reservas, cobros, facturas y bitácora) | `SELECT simulacion.borrar();` |
+
+`nuevo_lote` solo ocupa habitaciones libres para toda la estadía, en servicio y listas para huéspedes; si no hay
+suficientes, crea las que quepan. La API no puede ejecutar estas funciones: solo el administrador de la base y
+`pg_cron`.
 
 ## Despliegue en Vercel
 
@@ -913,6 +984,11 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/servicios` | Recepcionista, gerente (con `todos=true`, gerencia ve también los inactivos) |
 | POST/PATCH | `/api/servicios`, `/api/servicios/{id}` | Gerente: agrega, cambia, activa o desactiva servicios |
 | GET | `/api/reservas/{codigo}/cuenta` | Cliente titular: su cuenta, sin nombres del personal |
+| GET/POST | `/api/reservas/{codigo}/comprobantes` | Cliente titular: datos para pagar por SINPE o transferencia y envío del comprobante |
+| GET | `/api/gestion/comprobantes` | Recepcionista, gerente: comprobantes por revisar o revisados (7 días) |
+| GET | `/api/gestion/comprobantes/{id}/archivo` | Recepcionista, gerente: la imagen o el PDF del comprobante |
+| POST | `/api/gestion/comprobantes/{id}/aceptar` | Recepcionista, gerente: registra el pago, confirma la reserva y la factura |
+| POST | `/api/gestion/comprobantes/{id}/rechazar` | Recepcionista, gerente: rechaza con motivo |
 | GET | `/api/solicitudes` | Personal, cada área lo suyo: bandeja; con `desde`, solo lo que cambió, y con `abierta` y `despues`, los mensajes nuevos de una conversación |
 | POST | `/api/solicitudes/{id}/mensajes` | Personal del área: responde al huésped |
 | PATCH | `/api/solicitudes/{id}` | Personal del área: tomar, pasar a otra área, resolver o reabrir |
@@ -976,7 +1052,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 190 pruebas automáticas. Cubren:
+`api/tests` contiene 212 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -1019,6 +1095,11 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   pulsó el botón; no toca reservas en línea, de la agencia, ya hospedadas, con adelanto, de mañana ni tomadas
   después de la hora de garantía; es idempotente; respeta `HORA_GARANTIA`; la función responde sin la API (como
   la llama `pg_cron`); tablero, detalle y correo anuncian lo mismo que hace la función; permisos por rol.
+- Comprobantes de SINPE Móvil o transferencia: acuse al cliente y aviso a recepción, número normalizado y único,
+  monto exacto, archivo validado por su contenido (tipo y tamaño), un comprobante en revisión a la vez, solo el
+  titular, tarjeta bloqueada mientras se revisa, bandeja y archivo solo para recepción y gerencia, aceptación con
+  pago, confirmación y factura, rechazo con motivo y reenvío, cancelación con el comprobante pendiente o ya
+  pagado, retención de las imágenes y permisos de la base.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 

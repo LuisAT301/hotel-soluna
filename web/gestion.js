@@ -20,6 +20,9 @@ const ACCIONES_BITACORA = {
   pago_aprobado: 'Pago aprobado',
   pago_rechazado: 'Pago rechazado',
   reembolso: 'Pago reembolsado',
+  comprobante_enviado: 'Comprobante de pago enviado por el huésped',
+  comprobante_aceptado: 'Comprobante aceptado: pago registrado y reserva confirmada',
+  comprobante_rechazado: 'Comprobante de pago rechazado',
   cancelar_reserva: 'Reserva cancelada',
   check_in: 'Ingreso del huésped (check-in)',
   check_out: 'Salida del huésped (check-out)',
@@ -147,7 +150,11 @@ function mostrarFicha() {
   const { reserva: r, piso, estado_limpieza: limpieza, fuera_de_servicio: fuera, pagada_en_linea: pagada } = gestionActual;
   let pago = 'Se paga en el hotel';
   if (pagada) pago = 'Pagado en línea';
-  else if (r.estado === 'pendiente_pago') pago = 'Pendiente de pago en línea';
+  else if (r.estado === 'pendiente_pago') {
+    pago = r.comprobante_estado === 'pendiente'
+      ? 'Pendiente de pago: comprobante de SINPE o transferencia en revisión'
+      : 'Pendiente de pago en línea';
+  }
   if (r.garantia_hasta) {
     const vencida = Date.now() >= new Date(r.garantia_hasta);
     pago += ` · garantía hasta las ${horaGarantia()} del ${fechaCorta(r.fecha_entrada)}${vencida ? ' (vencida)' : ''}`;
@@ -193,6 +200,12 @@ function mostrarAcciones() {
 /** Resume el detalle de una acción del historial (por ejemplo, qué cambió en una modificación). */
 function resumenEvento(e) {
   const d = e.detalle || {};
+  const medio = { sinpe: 'SINPE Móvil', transferencia: 'transferencia' }[d.metodo] || d.metodo;
+  if (e.accion === 'comprobante_enviado') {
+    return `${medio} ${d.numero} por ${dinero.format(Number(d.monto))}${d.archivo ? ', con archivo' : ''}`;
+  }
+  if (e.accion === 'comprobante_aceptado') return `${medio} ${d.numero}; factura ${d.factura}`;
+  if (e.accion === 'comprobante_rechazado') return `${medio} ${d.numero}: ${d.motivo}`;
   if (e.accion === 'modificar_reserva' && d.antes && d.despues) {
     const nombres = { habitacion: 'habitación', entrada: 'entrada', salida: 'salida', personas: 'personas', total: 'total' };
     const formato = (campo, valor) => {

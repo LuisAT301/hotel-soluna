@@ -142,6 +142,9 @@ class ReservaSalida(BaseModel):
     creada_en: datetime
     # Hasta cuándo se garantizan la habitación y la tarifa (reservas que se pagan al llegar y aún no ingresan)
     garantia_hasta: datetime | None = None
+    # Estado del último comprobante de pago enviado (pendiente, aceptado o rechazado) y, si se rechazó, por qué
+    comprobante_estado: str | None = None
+    comprobante_motivo: str | None = None
 
 
 class SolicitudPago(BaseModel):
@@ -631,3 +634,86 @@ class ReservaLiberada(BaseModel):
     codigo: str
     habitacion: str
     fecha_entrada: date
+
+
+# ---------------------------------------------------------------------
+# Comprobantes de pago por SINPE Móvil o transferencia (etapa 6)
+# ---------------------------------------------------------------------
+MetodoComprobante = Literal["sinpe", "transferencia"]
+# 1,5 MB de archivo ocupan unos 2 MB en base64; se corta antes de decodificar
+MAX_ARCHIVO_BASE64 = 2_100_000
+
+
+class NuevoComprobante(BaseModel):
+    """Comprobante que sube el cliente: el archivo va en base64, ya comprimido por el navegador."""
+    metodo: MetodoComprobante
+    numero: str = Field(max_length=60)
+    monto: Dinero
+    archivo: str | None = Field(default=None, max_length=MAX_ARCHIVO_BASE64)
+
+    @field_validator("numero")
+    @classmethod
+    def numero_limpio(cls, valor: str) -> str:
+        """Quita espacios y pasa a mayúsculas: "ft 2611 0042" y "FT26110042" son el mismo comprobante."""
+        valor = re.sub(r"\s+", "", valor).upper()
+        if not re.fullmatch(r"[A-Z0-9-]{4,40}", valor):
+            raise ValueError("El número de comprobante debe tener de 4 a 40 letras, números o guiones")
+        return valor
+
+    @field_validator("archivo")
+    @classmethod
+    def archivo_vacio(cls, valor: str | None) -> str | None:
+        """Un archivo vacío equivale a no adjuntarlo."""
+        return valor or None
+
+
+class ComprobanteSalida(BaseModel):
+    """Un comprobante, sin el archivo. ``revisado_por`` es nulo cuando lo ve el cliente."""
+    id: int
+    metodo: MetodoComprobante
+    numero: str
+    monto: Decimal
+    tiene_archivo: bool              # falso si no se adjuntó o si la retención ya lo borró
+    tipo_archivo: str | None
+    estado: str
+    motivo: str | None
+    enviado_en: datetime
+    revisado_en: datetime | None
+    revisado_por: str | None = None
+
+
+class DatosPagoComprobante(BaseModel):
+    """Lo que el cliente necesita para pagar por SINPE Móvil o transferencia, y lo que ya envió."""
+    codigo: str
+    monto: Decimal                   # total con IVA: lo que debe pagar
+    sinpe: str
+    cuenta: str
+    titular: str
+    comprobantes: list[ComprobanteSalida]
+
+
+class ComprobanteEnBandeja(ComprobanteSalida):
+    """Comprobante en la bandeja de recepción, con los datos de su reserva para verificarlo."""
+    codigo: str
+    nombre_huesped: str
+    correo_huesped: str
+    habitacion: str
+    fecha_entrada: date
+    fecha_salida: date
+    estado_reserva: str
+    monto_esperado: Decimal          # total con IVA de la reserva
+
+
+class RechazoComprobante(BaseModel):
+    """Motivo del rechazo, que se le envía al cliente."""
+    motivo: str = Field(max_length=200)
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_limpio(cls, valor: str) -> str:
+        """Recorta y une los espacios; un motivo de solo espacios no cuenta."""
+        valor = _texto_limpio(valor) or ""
+        if len(valor) < 3:
+            raise ValueError("Indique el motivo del rechazo (al menos 3 caracteres)")
+        return valor
+

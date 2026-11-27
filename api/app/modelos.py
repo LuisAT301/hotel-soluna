@@ -12,7 +12,7 @@ ejemplo ``reserva.habitacion.tipo.nombre``, sin escribir el JOIN a mano.
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Computed, ForeignKey, exists, func
+from sqlalchemy import Computed, ForeignKey, exists, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
 
@@ -296,3 +296,44 @@ class PagoCaja(Base):
 # así que no se libera sola. Se declara aquí porque necesita la tabla de pagos; viaja como un EXISTS
 # dentro de la misma consulta de la reserva, sin consultas adicionales.
 Reserva.con_adelanto = column_property(exists().where(PagoCaja.reserva_id == Reserva.id))
+
+
+class Comprobante(Base):
+    """Comprobante de un pago por SINPE Móvil o transferencia, que recepción revisa.
+
+    El cliente indica el método, el número y el monto, y puede adjuntar una
+    imagen o un PDF. Recepción lo acepta (se registra el pago y se confirma la
+    reserva) o lo rechaza con un motivo. La API no puede borrarlo ni cambiar lo
+    que el cliente envió; el mantenimiento borra el archivo 90 días después de
+    revisado y conserva el resto como respaldo del pago.
+    """
+    __tablename__ = "comprobantes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    metodo: Mapped[str]                      # sinpe o transferencia
+    numero: Mapped[str]                      # número del comprobante, en mayúsculas
+    monto: Mapped[Decimal]                   # lo que el cliente dice que pagó (igual al total con IVA)
+    # El archivo solo se carga cuando se pide (al mostrarlo); las listas no lo traen
+    archivo: Mapped[bytes | None] = mapped_column(deferred=True)
+    tipo_archivo: Mapped[str | None]         # image/jpeg, image/png o application/pdf
+    estado: Mapped[str]                      # pendiente, aceptado o rechazado
+    motivo: Mapped[str | None]               # por qué se rechazó
+    enviado_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    enviado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    revisado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    revisado_en: Mapped[datetime | None]
+
+    reserva: Mapped[Reserva] = relationship()
+
+
+# El último comprobante de la reserva (su estado y, si se rechazó, el motivo), para que la lista de
+# reservas muestre "en revisión" o "rechazado" sin consultas adicionales
+def _del_ultimo_comprobante(columna):
+    return column_property(
+        select(columna).where(Comprobante.reserva_id == Reserva.id)
+        .order_by(Comprobante.id.desc()).limit(1).correlate_except(Comprobante).scalar_subquery())
+
+
+Reserva.comprobante_estado = _del_ultimo_comprobante(Comprobante.estado)
+Reserva.comprobante_motivo = _del_ultimo_comprobante(Comprobante.motivo)
