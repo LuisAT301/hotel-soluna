@@ -11,12 +11,20 @@ Estados de una reserva: pendiente_pago (reserva en línea sin pagar),
 confirmada, en_curso, finalizada y cancelada. Una reserva de recepción nace
 confirmada porque el huésped paga en el hotel.
 
+Reservas que se pagan al llegar (canal "recepcion", en el mostrador, o
+"telefono", por llamada): el huésped recibe un correo con el código, la
+habitación, el monto con IVA a pagar a su llegada y la garantía: la
+habitación y la tarifa se conservan hasta las 17:00 del día de entrada.
+Después, si no se presentó, el precio no se garantiza y la estadía depende
+de la disponibilidad. En las reservas por teléfono, el teléfono de
+contacto es obligatorio.
+
 Regla contra la sobreventa: la base de datos (restricción "sin_traslape")
 impide dos reservas activas de la misma habitación con fechas traslapadas,
 incluso si llegan al mismo tiempo a réplicas distintas de la API.
 """
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -39,6 +47,8 @@ MESES_TEMPORADA_ALTA = {12, 1, 2, 3, 4}
 MAX_NOCHES = 30
 # Una estadía en curso o terminada ya no se puede cancelar
 ESTADOS_CANCELABLES = ("pendiente_pago", "confirmada")
+# Canales en los que el huésped paga al llegar y la reserva tiene hora de garantía
+CANALES_PAGO_EN_HOTEL = ("recepcion", "telefono")
 PUEDEN_RESERVAR = requiere_rol("cliente", "recepcionista", "gerente")
 
 
@@ -90,6 +100,54 @@ def nuevo_codigo() -> str:
     return "SOL-" + "".join(secrets.choice(alfabeto) for _ in range(6))
 
 
+def garantia_hasta(canal: str, estado: str, fecha_entrada: date) -> datetime | None:
+    """Hasta cuándo se garantizan la habitación y la tarifa de una reserva que se paga al llegar.
+
+    Solo aplica mientras el huésped no ha ingresado (reserva confirmada) y
+    a los canales de recepción y teléfono: las reservas en línea ya están
+    pagadas y las de la agencia las garantiza la agencia. Devuelve None si
+    no aplica.
+    """
+    if canal not in CANALES_PAGO_EN_HOTEL or estado != "confirmada":
+        return None
+    return datetime.combine(fecha_entrada, time(config.HORA_GARANTIA), tzinfo=config.ZONA_HORARIA)
+
+
+def hora_legible(hora: int) -> str:
+    """Hora en el formato de los correos: 17 da "5:00 p. m."."""
+    return f"{hora % 12 or 12}:00 {'a. m.' if hora < 12 else 'p. m.'}"
+
+
+def bloque_pago_en_hotel(reserva: Reserva) -> str:
+    """Párrafos del correo con el monto a pagar al llegar y la política de garantía."""
+    impuesto = impuesto_de(reserva.total)
+    noches = (reserva.fecha_salida - reserva.fecha_entrada).days
+    return (
+        f"Monto a pagar a su llegada\n"
+        f"  Hospedaje ({noches} {'noche' if noches == 1 else 'noches'}): USD {reserva.total}\n"
+        f"  IVA (13 %): USD {impuesto}\n"
+        f"  Total: USD {reserva.total + impuesto}\n"
+        f"El pago se realiza en la recepción del hotel al registrar su ingreso.\n\n"
+        f"Garantía de su reserva\n"
+        f"Le guardamos la habitación y la tarifa acordada hasta las {hora_legible(config.HORA_GARANTIA)} "
+        f"del {reserva.fecha_entrada:%d/%m/%Y}, su día de llegada. Si no se presenta antes de esa hora, no "
+        f"podremos conservar el precio acordado y su estadía dependerá de las habitaciones disponibles en ese "
+        f"momento.\n\n"
+        f"Si necesita cambiar o cancelar su reserva, llámenos al {config.TELEFONO_HOTEL} o responda este "
+        f"correo indicando su código.\n"
+    )
+
+
+def correo_pago_en_hotel(tareas: BackgroundTasks, reserva: Reserva) -> None:
+    """Confirmación de una reserva que se paga al llegar (recepción o teléfono)."""
+    contacto = f"Teléfono de contacto: {reserva.telefono_huesped}\n" if reserva.telefono_huesped else ""
+    correo.programar(
+        tareas, reserva.correo_huesped, f"Reserva confirmada {reserva.codigo}: pago a su llegada",
+        f"Hola, {reserva.nombre_huesped}:\n\nGracias por reservar con el Hotel Soluna. Su habitación quedó "
+        f"reservada con estos datos:\n\n{correo.detalle_reserva(reserva)}\n{contacto}\n"
+        f"{bloque_pago_en_hotel(reserva)}\nHotel Soluna · Playa Sámara, Guanacaste\n")
+
+
 def salida_reserva(r: Reserva) -> ReservaSalida:
     """Arma la respuesta de una reserva, con el IVA calculado sobre el total del hospedaje."""
     return ReservaSalida(
@@ -98,6 +156,7 @@ def salida_reserva(r: Reserva) -> ReservaSalida:
         tipo=r.habitacion.tipo.nombre,
         nombre_huesped=r.nombre_huesped,
         correo_huesped=r.correo_huesped,
+        telefono_huesped=r.telefono_huesped,
         personas=r.personas,
         fecha_entrada=r.fecha_entrada,
         fecha_salida=r.fecha_salida,
@@ -108,6 +167,7 @@ def salida_reserva(r: Reserva) -> ReservaSalida:
         total_con_impuesto=r.total + impuesto_de(r.total),
         tiene_factura=r.factura is not None,
         creada_en=r.creada_en,
+        garantia_hasta=garantia_hasta(r.canal, r.estado, r.fecha_entrada),
     )
 
 
@@ -225,12 +285,14 @@ def crear_reserva(
       1. Valida fechas, habitación y capacidad.
       2. Decide canal y estado según quién reserva: un cliente reserva para sí
          mismo y queda pendiente de pago; recepción o gerencia reservan a
-         nombre de un huésped y la reserva nace confirmada.
+         nombre de un huésped, en el mostrador o por teléfono (con teléfono
+         de contacto obligatorio), y la reserva nace confirmada.
       3. Calcula el total por temporada e inserta la reserva.
       4. Si la base rechaza el INSERT por traslape (otra solicitud ganó la
          habitación), responde 409 en lugar de un error genérico.
       5. Registra la bitácora, confirma la transacción y, si ya está
-         confirmada, envía el correo.
+         confirmada, envía el correo con el monto a pagar al llegar y la
+         hora de garantía.
     """
     validar_fechas(datos.fecha_entrada, datos.fecha_salida)
     habitacion = sesion.get(Habitacion, datos.habitacion_id)
@@ -247,8 +309,11 @@ def crear_reserva(
         if not datos.nombre_huesped or not datos.correo_huesped:
             raise HTTPException(422,
                                 "Indique el nombre y el correo del huésped")
-        nombre, correo, canal, estado, cliente_id = (
-            datos.nombre_huesped, datos.correo_huesped.lower(), "recepcion", "confirmada", None)
+        canal = datos.canal or "recepcion"
+        if canal == "telefono" and not datos.telefono_huesped:
+            raise HTTPException(422, "Indique un teléfono de contacto para la reserva por teléfono")
+        nombre, correo, estado, cliente_id = (
+            datos.nombre_huesped, datos.correo_huesped.lower(), "confirmada", None)
 
     reserva = Reserva(
         codigo=nuevo_codigo(),
@@ -256,6 +321,7 @@ def crear_reserva(
         cliente_id=cliente_id,
         nombre_huesped=nombre,
         correo_huesped=correo,
+        telefono_huesped=datos.telefono_huesped,
         personas=datos.personas,
         fecha_entrada=datos.fecha_entrada,
         fecha_salida=datos.fecha_salida,
@@ -280,8 +346,8 @@ def crear_reserva(
               salida=str(datos.fecha_salida), canal=canal)
     sesion.commit()
     sesion.refresh(reserva)   # trae los valores que puso la base, como creada_en
-    if reserva.estado == "confirmada":
-        correo_confirmacion(tareas, reserva, "\nEl pago se realiza en la recepción del hotel.")
+    if reserva.canal in CANALES_PAGO_EN_HOTEL:
+        correo_pago_en_hotel(tareas, reserva)
     return salida_reserva(reserva)
 
 

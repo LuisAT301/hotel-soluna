@@ -95,10 +95,11 @@ class Reserva(Base):
     cliente_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     nombre_huesped: Mapped[str]
     correo_huesped: Mapped[str]
+    telefono_huesped: Mapped[str | None]         # contacto; obligatorio en reservas por teléfono
     personas: Mapped[int]
     fecha_entrada: Mapped[date]
     fecha_salida: Mapped[date]                   # día de salida: esa noche ya no se cobra
-    canal: Mapped[str]                           # web, recepcion u ota
+    canal: Mapped[str]                           # web, recepcion, telefono u ota
     estado: Mapped[str]                          # pendiente_pago, confirmada, en_curso, finalizada o cancelada
     total: Mapped[Decimal]                       # hospedaje sin impuestos
     creada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

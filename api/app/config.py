@@ -110,3 +110,13 @@ CORREO_BIENVENIDAS_HORA = int(leer("CORREO_BIENVENIDAS_HORA", "30"))
 IVA = Decimal("0.13")
 EMISOR_NOMBRE = "Hotel Soluna S.A."
 EMISOR_CEDULA = "3101999999"   # cédula jurídica ficticia
+
+# ---------------------------------------------------------------------
+# Reservas que se pagan al llegar (por teléfono o en el mostrador)
+# ---------------------------------------------------------------------
+# Hora del día de entrada (hora de Costa Rica) hasta la que se garantizan la
+# habitación y la tarifa acordada. Después, si el huésped no se presentó, el
+# precio no se conserva y la estadía depende de la disponibilidad.
+HORA_GARANTIA = int(leer("HORA_GARANTIA", "17"))
+# Teléfono que aparece en los correos para cambios o cancelaciones (dato ficticio del prototipo)
+TELEFONO_HOTEL = leer("TELEFONO_HOTEL", "+506 2656-0000")

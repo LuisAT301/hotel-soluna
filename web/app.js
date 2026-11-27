@@ -239,8 +239,9 @@ async function buscar(parametros) {
 
 /**
  * Empieza una reserva desde el botón "Reservar".
- * Sin sesión pide iniciarla; un cliente reserva de inmediato a su nombre; el personal
- * primero completa el nombre y el correo del huésped en un diálogo.
+ * Sin sesión pide iniciarla; un cliente reserva de inmediato a su nombre; el personal abre el
+ * formulario de nueva reserva (gestion.js) con las fechas y el tipo ya elegidos, para completar
+ * los datos del huésped, su teléfono y si llegó por teléfono o al mostrador.
  */
 function iniciarReserva(grupo, parametros) {
   const datos = {
@@ -257,16 +258,9 @@ function iniciarReserva(grupo, parametros) {
     intentar(() => confirmarReserva(datos));
     return;
   }
-  // Personal del hotel: pide los datos del huésped
-  reservaPendiente = datos;
-  $('#resumen-huesped').textContent =
-    `Habitación ${grupo.tipo} del ${fechaCorta(datos.fecha_entrada)} al ${fechaCorta(datos.fecha_salida)}.`;
-  $('#form-huesped').reset();
-  $('#dlg-huesped').showModal();
+  // Personal del hotel: el mismo formulario de "Nueva reserva" de Recepción
+  abrirNuevaReserva({ entrada: parametros.entrada, salida: parametros.salida, personas: parametros.personas, tipo: grupo.tipo });
 }
-
-// Datos de la reserva que el personal está completando en el diálogo del huésped
-let reservaPendiente = null;
 
 /** Crea la reserva, actualiza la búsqueda y la lista, y abre el pago si quedó pendiente. */
 async function confirmarReserva(datos) {
@@ -755,13 +749,6 @@ document.addEventListener('DOMContentLoaded', () => {
         $('#nota-entrar').hidden = false;
       })
       .finally(() => { boton.disabled = false; });
-  });
-
-  $('#form-huesped').addEventListener('submit', (evento) => {
-    evento.preventDefault();
-    const huesped = Object.fromEntries(new FormData(evento.target));
-    $('#dlg-huesped').close();
-    intentar(() => confirmarReserva({ ...reservaPendiente, ...huesped }));
   });
 
   $('#form-pago').addEventListener('submit', (evento) => {

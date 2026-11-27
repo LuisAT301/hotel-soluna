@@ -7,6 +7,7 @@ de modo que nunca se filtre por accidente una columna interna (por ejemplo,
 el hash de la contraseña). ``from_attributes=True`` permite construir la
 respuesta directamente desde un objeto de la base de datos.
 """
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -100,6 +101,23 @@ class NuevaReserva(BaseModel):
     # si reserva un cliente con su cuenta, se usan sus propios datos.
     nombre_huesped: str | None = Field(default=None, min_length=2, max_length=120)
     correo_huesped: EmailStr | None = None
+    # Teléfono de contacto: obligatorio en las reservas que llegan por teléfono
+    telefono_huesped: str | None = Field(default=None, max_length=25)
+    # Cómo llegó la reserva al personal: en el mostrador o por teléfono (se ignora si reserva un cliente)
+    canal: Literal["recepcion", "telefono"] | None = None
+
+    @field_validator("telefono_huesped")
+    @classmethod
+    def telefono_valido(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; exige solo números, espacios, guiones, paréntesis y un "+"
+        inicial, con 8 a 15 dígitos (el máximo internacional, E.164). Vacío equivale a no indicarlo."""
+        if valor is None or not valor.strip():
+            return None
+        valor = " ".join(valor.split())
+        digitos = sum(c.isdigit() for c in valor)
+        if not re.fullmatch(r"\+?[0-9 ()-]{8,20}", valor) or not 8 <= digitos <= 15:
+            raise ValueError("Teléfono inválido: use números, espacios, guiones o paréntesis, con 8 a 15 dígitos")
+        return valor
 
 
 class ReservaSalida(BaseModel):
@@ -111,6 +129,7 @@ class ReservaSalida(BaseModel):
     tipo: str
     nombre_huesped: str
     correo_huesped: str
+    telefono_huesped: str | None
     personas: int
     fecha_entrada: date
     fecha_salida: date
@@ -121,6 +140,8 @@ class ReservaSalida(BaseModel):
     total_con_impuesto: Decimal    # lo que se cobra
     tiene_factura: bool
     creada_en: datetime
+    # Hasta cuándo se garantizan la habitación y la tarifa (reservas que se pagan al llegar y aún no ingresan)
+    garantia_hasta: datetime | None = None
 
 
 class SolicitudPago(BaseModel):
@@ -313,6 +334,7 @@ class ReservaEnTablero(BaseModel):
     fecha_entrada: date
     fecha_salida: date
     estado: str
+    garantia_vencida: bool = False   # se paga al llegar, no ha ingresado y ya pasó la hora de garantía
 
 
 class HabitacionEnTablero(BaseModel):

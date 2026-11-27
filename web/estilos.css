@@ -577,6 +577,36 @@ label.en-linea select { min-width: 0; padding: 5px 8px; }
 .redactar textarea:disabled { background: #F4F1EB; }
 
 /* =====================================================================
+   Nueva reserva de recepción (gestion.js): pasos, tipos y resumen
+   ===================================================================== */
+.nueva-reserva fieldset.paso { border: 1px solid var(--borde); border-radius: var(--radio); padding: 10px 14px 12px; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.nueva-reserva legend { padding: 0 6px; font-weight: 600; color: var(--oceano); }
+.nueva-reserva input[type="radio"] { width: auto; min-width: 0; margin: 0; accent-color: var(--laguna); }
+.nueva-reserva .fila.compacta { gap: 10px; }
+.tipos { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.tipo-opcion {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  color: var(--texto);
+  font-size: .88rem;
+  cursor: pointer;
+}
+.tipo-opcion strong { text-transform: capitalize; color: var(--oceano); }
+.tipo-opcion small { color: var(--gris); }
+.tipo-opcion:has(input:checked) { border-color: var(--laguna); background: var(--laguna-claro); }
+.canales { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.canales label { color: var(--texto); font-size: .92rem; }
+.resumen-reserva { background: #FBF8F2; border-radius: var(--radio); padding: 10px 14px; font-size: .92rem; }
+.resumen-reserva:empty { display: none; }
+.resumen-reserva p { margin: 0 0 4px; }
+.resumen-reserva p:last-child { margin: 0; }
+.resumen-reserva .alerta { color: #8E3524; font-weight: 600; }
+
+/* =====================================================================
    Pantallas angostas
    ===================================================================== */
 /* Tabletas: el menú se convierte en un panel desplegable que abre el botón ☰ */
@@ -619,6 +649,7 @@ label.en-linea select { min-width: 0; padding: 5px 8px; }
   .historial time { grid-row: auto; }
   .fila.compacta { flex-wrap: wrap; }
   .cuadricula { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .nueva-reserva .fila.compacta label { flex: 1 1 100%; }
   #sec-tablero .encabezado { flex-wrap: wrap; }
   #sec-solicitudes .encabezado { flex-wrap: wrap; }
   .mensajes li { max-width: 92%; }

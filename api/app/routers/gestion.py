@@ -32,7 +32,7 @@ toda la estadía. Para mover a un huésped que ya ingresó, la habitación nueva
 debe estar libre desde su fecha de entrada; la ruta de alternativas solo
 ofrece las que cumplen esa condición.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -41,15 +41,15 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import correo
+from .. import config, correo
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol
 from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, HabitacionEnTablero,
                         ReservaEnTablero, ReservaSalida, ResumenTablero, Tablero, VistaRecepcion)
 from ..facturacion import impuesto_de
 from ..modelos import Habitacion, Pago, RegistroBitacora, Reserva, Solicitud, Usuario
-from .reservas import (ESTADOS_CANCELABLES, MAX_NOCHES, buscar_reserva, calcular_total,
-                       habitaciones_libres, hoy, salida_reserva)
+from .reservas import (CANALES_PAGO_EN_HOTEL, ESTADOS_CANCELABLES, MAX_NOCHES, bloque_pago_en_hotel,
+                       buscar_reserva, calcular_total, garantia_hasta, habitaciones_libres, hoy, salida_reserva)
 
 router = APIRouter(prefix="/api/gestion", tags=["gestión de reservas"])
 RECEPCION = requiere_rol("recepcionista", "gerente")
@@ -271,10 +271,11 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
     visible, para no gastar consultas del plan gratuito de la base.
     """
     dia = hoy()
+    ahora = datetime.now(config.ZONA_HORARIA)
     habitaciones = sesion.scalars(select(Habitacion).order_by(Habitacion.piso, Habitacion.numero)).all()
     filas = sesion.execute(
         select(Reserva.habitacion_id, Reserva.codigo, Reserva.nombre_huesped, Reserva.personas,
-               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado)
+               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado, Reserva.canal)
         .where(or_(Reserva.estado == "en_curso",
                    and_(Reserva.estado.in_(("pendiente_pago", "confirmada")),
                         Reserva.fecha_entrada <= dia, Reserva.fecha_salida > dia)))
@@ -283,9 +284,10 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
     ocupantes: dict[int, ReservaEnTablero] = {}
     llegadas: dict[int, ReservaEnTablero] = {}
     for fila in filas:
+        limite = garantia_hasta(fila.canal, fila.estado, fila.fecha_entrada)
         reserva = ReservaEnTablero(codigo=fila.codigo, nombre_huesped=fila.nombre_huesped, personas=fila.personas,
                                    fecha_entrada=fila.fecha_entrada, fecha_salida=fila.fecha_salida,
-                                   estado=fila.estado)
+                                   estado=fila.estado, garantia_vencida=limite is not None and ahora >= limite)
         destino = ocupantes if fila.estado == "en_curso" else llegadas
         destino.setdefault(fila.habitacion_id, reserva)   # la más antigua, si hubiera dos
 
@@ -483,9 +485,11 @@ def modificar(codigo: str, cambio: CambioReserva, tareas: BackgroundTasks,
 
     if antes["habitacion"] != despues["habitacion"] or antes["entrada"] != despues["entrada"] \
             or antes["salida"] != despues["salida"]:
+        # Si se paga al llegar, el correo repite el monto y la hora de garantía con los datos nuevos
+        pago = (f"\n{bloque_pago_en_hotel(reserva)}" if reserva.canal in CANALES_PAGO_EN_HOTEL
+                else f"Total con IVA: USD {reserva.total + impuesto_de(reserva.total)}\n")
         correo.programar(
             tareas, reserva.correo_huesped, f"Reserva modificada {reserva.codigo}",
             f"Hola, {reserva.nombre_huesped}:\n\nActualizamos su reserva en el Hotel Soluna. Estos son los "
-            f"datos vigentes:\n\n{correo.detalle_reserva(reserva)}\n"
-            f"Total con IVA: USD {reserva.total + impuesto_de(reserva.total)}\n")
+            f"datos vigentes:\n\n{correo.detalle_reserva(reserva)}\n{pago}")
     return salida_reserva(reserva)

@@ -284,7 +284,11 @@
       <section id="sec-recepcion" class="tarjeta" hidden>
         <div class="encabezado">
           <h2>Recepción</h2>
-          <button id="btn-recargar-recepcion" class="boton claro" type="button">Actualizar</button>
+          <div class="botones-fila">
+            <!-- Reserva tomada por teléfono o en el mostrador: abre dlg-nueva-reserva -->
+            <button id="btn-nueva-reserva" class="boton" type="button">Nueva reserva</button>
+            <button id="btn-recargar-recepcion" class="boton claro" type="button">Actualizar</button>
+          </div>
         </div>
         <div class="vistas" role="group" aria-label="Reservas que se muestran">
           <button type="button" data-vista="llegadas" aria-pressed="true">Llegadas</button>
@@ -446,16 +450,44 @@
     </form>
   </dialog>
 
-  <!-- Recepción o gerencia completan los datos del huésped antes de reservar a su nombre -->
-  <dialog id="dlg-huesped">
-    <form id="form-huesped" method="dialog">
-      <h2>Datos del huésped</h2>
-      <p id="resumen-huesped" class="nota"></p>
-      <label>Nombre completo <input name="nombre_huesped" required minlength="2"></label>
-      <label>Correo <input name="correo_huesped" type="email" required></label>
+  <!-- Nueva reserva tomada por recepción o gerencia (gestion.js): por teléfono o en el mostrador.
+       Se abre desde "Nueva reserva" en Recepción o desde "Reservar" en Disponibilidad. El huésped
+       paga al llegar; habitación y tarifa se garantizan hasta las 17:00 del día de entrada, y el
+       correo de confirmación lo explica. -->
+  <dialog id="dlg-nueva-reserva" class="ancho" aria-labelledby="nueva-titulo">
+    <form id="form-nueva-reserva" class="nueva-reserva">
+      <h2 id="nueva-titulo">Nueva reserva</h2>
+      <fieldset class="paso">
+        <legend>1. Fechas y personas</legend>
+        <div class="fila compacta">
+          <label>Entrada <input name="entrada" type="date" required></label>
+          <label>Salida <input name="salida" type="date" required></label>
+          <label>Personas <input name="personas" type="number" min="1" max="10" value="2" required></label>
+        </div>
+      </fieldset>
+      <fieldset class="paso">
+        <legend>2. Habitación</legend>
+        <div id="nueva-tipos" class="tipos" role="radiogroup" aria-label="Tipo de habitación"></div>
+        <label>Número de habitación <select name="habitacion_id" required></select></label>
+      </fieldset>
+      <fieldset class="paso">
+        <legend>3. Huésped</legend>
+        <div class="canales" role="radiogroup" aria-label="Cómo llegó la reserva">
+          <label class="en-linea"><input type="radio" name="canal" value="telefono" checked> Por teléfono</label>
+          <label class="en-linea"><input type="radio" name="canal" value="recepcion"> En el mostrador</label>
+        </div>
+        <label>Nombre completo <input name="nombre_huesped" required minlength="2" maxlength="120" autocomplete="off"></label>
+        <div class="fila compacta">
+          <label>Correo <input name="correo_huesped" type="email" required autocomplete="off"></label>
+          <label>Teléfono de contacto <input name="telefono_huesped" type="tel" maxlength="25" autocomplete="off"
+            placeholder="+506 8888-8888" pattern="\s*\+?[0-9 \(\)\-]{8,20}\s*"></label>
+        </div>
+      </fieldset>
+      <div id="nueva-resumen" class="resumen-reserva" aria-live="polite"></div>
+      <p id="error-nueva" class="aviso error" role="alert" hidden></p>
       <div class="acciones">
         <button class="boton claro" type="button" data-cerrar>Cancelar</button>
-        <button class="boton" type="submit" value="enviar">Confirmar reserva</button>
+        <button id="btn-crear-reserva" class="boton" type="submit">Crear reserva y enviar confirmación</button>
       </div>
     </form>
   </dialog>

@@ -280,9 +280,37 @@ posibles hoy y su historial (tomado de la bitácora, con quién hizo cada cosa):
   tiene factura; las noches adicionales se registran como una reserva nueva.
 - **Cancelar:** la misma cancelación de siempre, con reembolso si hubo pago en línea.
 
-Para probarlo en el sitio de Vercel o en Docker: entre como `recepcion@soluna.test`, reserve desde
-Disponibilidad una habitación con entrada hoy a nombre de un huésped y búsquela en **Llegadas**. Las reservas
-de recepción nacen confirmadas, así que admiten el ingreso de inmediato.
+Para probarlo en el sitio de Vercel o en Docker: entre como `recepcion@soluna.test`, cree una reserva con
+entrada hoy con **Nueva reserva** y búsquela en **Llegadas**. Las reservas de recepción nacen confirmadas, así que
+admiten el ingreso de inmediato.
+
+### Nueva reserva por teléfono o en el mostrador
+
+Cuando alguien llama para reservar, recepción pulsa **Nueva reserva** (tarjeta Recepción) y completa tres pasos:
+
+1. **Fechas y personas.** Empieza con entrada hoy y salida mañana.
+2. **Habitación.** Muestra los tipos libres para esas fechas, con cuántas quedan y el total sin IVA, y deja
+   elegir el número de habitación.
+3. **Huésped.** Nombre, correo y teléfono de contacto, y cómo llegó la reserva: **por teléfono** (el teléfono
+   es obligatorio) o **en el mostrador** (opcional).
+
+Antes de confirmar, el formulario muestra el total con IVA a pagar al llegar y la hora de garantía. El botón
+**Reservar** de Disponibilidad abre el mismo formulario, con las fechas y el tipo ya elegidos. Al crearla, la
+reserva queda confirmada con su código y se abre en la gestión de reservas.
+
+El huésped recibe un correo con el código, la habitación, las fechas, el teléfono registrado, el desglose del
+monto a pagar en la recepción (hospedaje, IVA del 13 % y total) y la política de garantía:
+
+> Le guardamos la habitación y la tarifa acordada hasta las 5:00 p. m. del día de llegada. Si no se presenta
+> antes de esa hora, no podremos conservar el precio acordado y su estadía dependerá de las habitaciones
+> disponibles en ese momento.
+
+La garantía aplica a las reservas que se pagan al llegar (por teléfono o en el mostrador) mientras el huésped no
+ha ingresado; las reservas en línea ya están pagadas. Pasada la hora, recepción y el tablero lo marcan como
+**Garantía vencida**, y recepción decide si cancelar la reserva o recalcular el precio. La hora se configura con
+la variable `HORA_GARANTIA` (17 por omisión) y el teléfono del hotel que aparece en el correo, con
+`TELEFONO_HOTEL`. Si se modifican las fechas o la habitación, el correo de cambio repite el monto y la nueva
+garantía.
 
 ## Demostraciones del bloque 2
 
@@ -802,7 +830,7 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | POST | `/api/auth/registro` | Público (crea siempre una cuenta de cliente) |
 | POST | `/api/auth/login` | Público. Bloquea la cuenta 15 minutos tras 5 intentos fallidos |
 | GET | `/api/disponibilidad` | Público |
-| POST | `/api/reservas` | Cliente, recepcionista, gerente |
+| POST | `/api/reservas` | Cliente, recepcionista, gerente. El personal indica `canal` (`recepcion` o `telefono`) y `telefono_huesped`, obligatorio por teléfono |
 | GET | `/api/reservas` | Cliente (solo las suyas), recepcionista, gerente |
 | POST | `/api/reservas/{codigo}/cancelar` | Dueño de la reserva, recepcionista, gerente |
 | GET | `/api/habitaciones` | Personal del hotel |
@@ -885,7 +913,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 145 pruebas automáticas. Cubren:
+`api/tests` contiene 163 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -917,6 +945,9 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   ajeno igual a inexistente, escritura solo durante la estadía, límite por minuto, mensajes inválidos, cada área
   ve lo suyo, conversación completa, tomar, reasignar y reabrir, consultas incrementales, número fijo de
   sentencias, simulador, cierre al registrar la salida, permisos de la base y retención.
+- Reservas por teléfono: teléfono obligatorio y su formato (en la API y en la base), canal de mostrador, el
+  cliente no elige canal, correo con monto, IVA, teléfono y política de garantía, garantía solo para pago al
+  llegar, garantía vencida en el tablero y correo de cambio con el monto nuevo.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 

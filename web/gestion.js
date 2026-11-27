@@ -9,7 +9,9 @@
 'use strict';
 
 const PUEDEN_GESTIONAR = ['recepcionista', 'gerente'];
-const CANALES = { web: 'Sitio web', recepcion: 'Recepción', ota: 'Agencia en línea (OTA)' };
+const CANALES = { web: 'Sitio web', recepcion: 'Recepción (mostrador)', telefono: 'Teléfono', ota: 'Agencia en línea (OTA)' };
+// Hora del día de llegada hasta la que se garantizan habitación y tarifa (igual que HORA_GARANTIA en la API)
+const HORA_GARANTIA = 17;
 
 // Nombre legible de cada acción de la bitácora que aparece en el historial
 const ACCIONES_BITACORA = {
@@ -39,6 +41,15 @@ let vistaRecepcion = 'llegadas';
 let gestionActual = null;
 
 const hoyISO = () => fechaISO(new Date());
+const horaGarantia = () => `${HORA_GARANTIA % 12 || 12}:00 ${HORA_GARANTIA < 12 ? 'a. m.' : 'p. m.'}`;
+
+/** Etiqueta de la garantía de una reserva que se paga al llegar: vencida, o hasta qué hora de hoy. */
+function etiquetaGarantia(r) {
+  if (!r.garantia_hasta) return null;
+  if (Date.now() >= new Date(r.garantia_hasta)) return el('span', { clase: 'estado atrasada' }, 'Garantía vencida');
+  if (r.fecha_entrada === hoyISO()) return el('span', { clase: 'estado pendiente' }, `Garantía hasta las ${horaGarantia()}`);
+  return null;
+}
 const noches = (r) => Math.round((new Date(r.fecha_salida) - new Date(r.fecha_entrada)) / 86400000);
 
 // ---------------------------------------------------------------------
@@ -69,7 +80,8 @@ async function cargarRecepcion() {
       el('span', {},
         etiquetaEstado(r.estado, ESTADOS),
         r.estado === 'confirmada' && r.fecha_entrada < hoy ? el('span', { clase: 'estado atrasada' }, 'Llegada atrasada') : null,
-        r.estado === 'en_curso' && r.fecha_salida <= hoy ? el('span', { clase: 'estado sale-hoy' }, 'Sale hoy') : null),
+        r.estado === 'en_curso' && r.fecha_salida <= hoy ? el('span', { clase: 'estado sale-hoy' }, 'Sale hoy') : null,
+        etiquetaGarantia(r)),
       el('button', { clase: 'boton pequeno', type: 'button', onclick: () => intentar(() => abrirGestion(r.codigo)) }, 'Gestionar'),
     ]),
     texto ? 'Ninguna reserva coincide con la búsqueda.' : SIN_RESULTADOS[vistaRecepcion]));
@@ -129,8 +141,14 @@ function mostrarFicha() {
   let pago = 'Se paga en el hotel';
   if (pagada) pago = 'Pagado en línea';
   else if (r.estado === 'pendiente_pago') pago = 'Pendiente de pago en línea';
+  if (r.garantia_hasta) {
+    const vencida = Date.now() >= new Date(r.garantia_hasta);
+    pago += ` · garantía hasta las ${horaGarantia()} del ${fechaCorta(r.fecha_entrada)}${vencida ? ' (vencida)' : ''}`;
+  }
+  const contacto = [r.correo_huesped];
+  if (r.telefono_huesped) contacto.push(r.telefono_huesped);
   const filas = [
-    ['Huésped', el('span', {}, r.nombre_huesped, el('br'), el('small', {}, r.correo_huesped))],
+    ['Huésped', el('span', {}, r.nombre_huesped, el('br'), el('small', {}, contacto.join(' · ')))],
     ['Habitación', el('span', {}, `${r.habitacion} · ${r.tipo} · piso ${piso} `,
       etiquetaEstado(limpieza, LIMPIEZA), fuera ? el('span', { clase: 'estado cancelada' }, 'Fuera de servicio') : null)],
     ['Estadía', `${fechaCorta(r.fecha_entrada)} al ${fechaCorta(r.fecha_salida)} · ${noches(r)} ${noches(r) === 1 ? 'noche' : 'noches'}`],
@@ -306,9 +324,160 @@ async function guardarModificacion(formulario) {
 }
 
 // ---------------------------------------------------------------------
+// Nueva reserva tomada por recepción (por teléfono o en el mostrador)
+// ---------------------------------------------------------------------
+// Tipos de habitación libres para las fechas elegidas, con sus habitaciones y el total sin IVA
+let opcionesNueva = [];
+
+/**
+ * Abre el formulario. Desde "Nueva reserva" empieza con entrada hoy y salida mañana; desde el botón
+ * "Reservar" de Disponibilidad llega con las fechas, las personas y el tipo ya elegidos.
+ */
+function abrirNuevaReserva(inicial = {}) {
+  const formulario = $('#form-nueva-reserva');
+  formulario.reset();
+  const manana = new Date();
+  manana.setDate(manana.getDate() + 1);
+  formulario.entrada.value = inicial.entrada || hoyISO();
+  formulario.entrada.min = hoyISO();
+  formulario.salida.value = inicial.salida || fechaISO(manana);
+  formulario.personas.value = inicial.personas || 2;
+  $('#error-nueva').hidden = true;
+  ajustarCanalNueva();
+  $('#dlg-nueva-reserva').showModal();
+  intentarEnNueva(() => cargarOpcionesNueva(inicial.tipo));
+}
+
+/** Ejecuta una acción del formulario y muestra el error dentro del diálogo. */
+async function intentarEnNueva(accion) {
+  $('#error-nueva').hidden = true;
+  try {
+    await accion();
+  } catch (error) {
+    $('#error-nueva').textContent = error.message;
+    $('#error-nueva').hidden = false;
+  }
+}
+
+/** Por teléfono, el número de contacto es obligatorio; en el mostrador, opcional. */
+function ajustarCanalNueva() {
+  const formulario = $('#form-nueva-reserva');
+  formulario.telefono_huesped.required = formulario.canal.value === 'telefono';
+}
+
+/**
+ * Consulta la disponibilidad de las fechas y personas elegidas y muestra un tipo de habitación por
+ * opción, con cuántas quedan libres y el total. Deja elegido el tipo indicado o el primero.
+ */
+async function cargarOpcionesNueva(tipoPreferido) {
+  const formulario = $('#form-nueva-reserva');
+  const parametros = new URLSearchParams({
+    entrada: formulario.entrada.value, salida: formulario.salida.value, personas: formulario.personas.value,
+  });
+  opcionesNueva = [];
+  $('#nueva-tipos').replaceChildren(el('p', { clase: 'nota sin-margen' }, 'Buscando habitaciones libres…'));
+  const libres = await api(`/api/disponibilidad?${parametros}`);
+  const tipos = new Map();
+  for (const h of libres) {
+    if (!tipos.has(h.tipo)) tipos.set(h.tipo, { tipo: h.tipo, capacidad: h.capacidad, total: Number(h.total), noches: h.noches, habitaciones: [] });
+    tipos.get(h.tipo).habitaciones.push(h);
+  }
+  opcionesNueva = [...tipos.values()];
+  if (!opcionesNueva.length) {
+    $('#nueva-tipos').replaceChildren(el('p', { clase: 'vacio' }, 'No hay habitaciones libres para esas fechas y personas.'));
+    formulario.habitacion_id.replaceChildren();
+    mostrarResumenNueva();
+    return;
+  }
+  const elegido = opcionesNueva.some((o) => o.tipo === tipoPreferido) ? tipoPreferido : opcionesNueva[0].tipo;
+  $('#nueva-tipos').replaceChildren(...opcionesNueva.map((o) => {
+    const opcion = el('input', { type: 'radio', name: 'tipo', value: o.tipo });
+    opcion.checked = o.tipo === elegido;
+    opcion.addEventListener('change', () => { elegirTipoNueva(); });
+    return el('label', { clase: 'tipo-opcion' }, opcion,
+      el('span', {},
+        el('strong', {}, o.tipo),
+        el('small', {}, ` · hasta ${o.capacidad} personas · ${o.habitaciones.length} libres`),
+        el('br'),
+        `${dinero.format(o.total)} por ${o.noches} ${o.noches === 1 ? 'noche' : 'noches'}, sin IVA`));
+  }));
+  elegirTipoNueva();
+}
+
+/** Llena el selector con las habitaciones libres del tipo elegido y actualiza el resumen. */
+function elegirTipoNueva() {
+  const formulario = $('#form-nueva-reserva');
+  const opcion = opcionesNueva.find((o) => o.tipo === formulario.tipo.value);
+  formulario.habitacion_id.replaceChildren(...(opcion ? opcion.habitaciones.map((h) =>
+    el('option', { value: String(h.habitacion_id) }, `Habitación ${h.numero}`)) : []));
+  mostrarResumenNueva();
+}
+
+/**
+ * Resumen antes de confirmar: total con IVA a pagar al llegar y hasta cuándo se garantiza. Si la
+ * llegada es hoy y ya pasó la hora de garantía, lo advierte.
+ */
+function mostrarResumenNueva() {
+  const formulario = $('#form-nueva-reserva');
+  const opcion = opcionesNueva.find((o) => o.tipo === formulario.tipo?.value);
+  const resumen = $('#nueva-resumen');
+  $('#btn-crear-reserva').disabled = !opcion;
+  if (!opcion) {
+    resumen.replaceChildren();
+    return;
+  }
+  const impuesto = Math.round(opcion.total * 13) / 100;
+  const entrada = formulario.entrada.value;
+  const tarde = entrada === hoyISO() && new Date().getHours() >= HORA_GARANTIA;
+  resumen.replaceChildren(
+    el('p', {}, 'Total a pagar al llegar: ', el('strong', {}, dinero.format(opcion.total + impuesto)),
+      el('small', {}, ` (${dinero.format(opcion.total)} + IVA ${dinero.format(impuesto)})`)),
+    el('p', { clase: tarde ? 'alerta' : '' }, tarde
+      ? `La llegada es hoy y ya pasaron las ${horaGarantia()}: la garantía de tarifa no aplica.`
+      : `La habitación y la tarifa se garantizan hasta las ${horaGarantia()} del ${fechaCorta(entrada)}. `
+        + 'Si el huésped no llega antes, el precio no se conserva. El correo de confirmación lo explica.'));
+}
+
+/** Crea la reserva, avisa a quién se envió la confirmación y la abre en el diálogo de gestión. */
+async function crearNuevaReserva(formulario) {
+  const datos = Object.fromEntries(new FormData(formulario));
+  const reserva = await api('/api/reservas', {
+    metodo: 'POST',
+    json: {
+      habitacion_id: Number(datos.habitacion_id),
+      fecha_entrada: datos.entrada,
+      fecha_salida: datos.salida,
+      personas: Number(datos.personas),
+      nombre_huesped: datos.nombre_huesped.trim(),
+      correo_huesped: datos.correo_huesped.trim(),
+      telefono_huesped: datos.telefono_huesped.trim() || null,
+      canal: datos.canal,
+    },
+  });
+  $('#dlg-nueva-reserva').close();
+  avisar(`Reserva ${reserva.codigo} creada para ${reserva.nombre_huesped}: habitación ${reserva.habitacion}, `
+    + `${dinero.format(Number(reserva.total_con_impuesto))} a pagar al llegar. Confirmación enviada a ${reserva.correo_huesped}.`);
+  await Promise.all([refrescarPanel(), abrirGestion(reserva.codigo)]);
+}
+
+// ---------------------------------------------------------------------
 // Eventos
 // ---------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
+  // Nueva reserva
+  $('#btn-nueva-reserva').addEventListener('click', () => abrirNuevaReserva());
+  const nueva = $('#form-nueva-reserva');
+  for (const campo of [nueva.entrada, nueva.salida, nueva.personas]) {
+    campo.addEventListener('change', () => intentarEnNueva(() => cargarOpcionesNueva(nueva.tipo?.value)));
+  }
+  for (const radio of nueva.querySelectorAll('input[name=canal]')) radio.addEventListener('change', ajustarCanalNueva);
+  nueva.addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    const boton = $('#btn-crear-reserva');
+    boton.disabled = true;
+    intentarEnNueva(() => crearNuevaReserva(nueva)).finally(() => { boton.disabled = !opcionesNueva.length; });
+  });
+
   for (const boton of document.querySelectorAll('#sec-recepcion [data-vista]')) {
     boton.addEventListener('click', () => intentar(() => elegirVista(boton.dataset.vista)));
   }
