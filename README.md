@@ -625,14 +625,16 @@ simulador. La función `hotel.mantenimiento()` los recorta con esta política:
 | Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
 | Solicitudes de huéspedes resueltas, con sus mensajes | Más de 90 días | Más de 30 días |
 
-`pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye una tercera tarea programada, que no limpia
-la base sino que libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*).
+`pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye otras dos tareas programadas que no limpian la
+base: una libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*) y la
+otra mueve la simulación de huéspedes (ver *Historial simulado*).
 
 | Tarea | Cuándo | Qué hace |
 |---|---|---|
 | `soluna-vigilar-ocupacion` | Cada hora (minuto 47) | Mide la base; si la ocupación es alta, limpia de inmediato |
 | `soluna-limpieza-diaria` | Todos los días a las 03:17 de Costa Rica | Aplica la retención normal y deja constancia en la bitácora |
 | `soluna-liberar-no-presentados` | Cada hora (minuto 5) | Cancela las reservas que se pagan al llegar cuya garantía venció |
+| `soluna-simulacion` | Cada hora (minuto 20) | Registra la salida de los huéspedes simulados y limpia las habitaciones que dejaron |
 
 Los 365 días siguen el mínimo de 12 meses de conservación de la bitácora de PCI DSS 4.0 (requisito 10.5.1), y
 los 90 días, los 3 meses que esa norma pide mantener disponibles de inmediato. La ocupación alta es una medida
@@ -649,6 +651,37 @@ Para revisar el mantenimiento:
 - **Bitácora del hotel:** gerencia ve una entrada `mantenimiento` por día, con el tamaño de la base y lo borrado.
 - **A mano:** `SELECT hotel.mantenimiento();` en el editor SQL de Supabase. En Docker, donde no hay
   `pg_cron` ni límite de plan, `docker compose exec db psql -U postgres -d hotel -c "SELECT mantenimiento()"`.
+
+## Historial simulado (solo en Supabase)
+
+Para que el sistema publicado tenga movimiento y acumule un historial realista, Supabase aloja huéspedes
+ficticios que llegan, se hospedan y se van solos. Cada estadía simulada deja la misma huella que una real:
+
+- **Reserva y bitácora:** código, canal y su historial completo (creación o pago, ingreso y salida).
+- **Cobros y facturas:** las reservas en línea tienen su pago aprobado y su factura del hospedaje. Al salir, las
+  que se pagan en el hotel cobran el saldo y emiten la factura final, con una línea por concepto.
+- **Limpieza:** la habitación queda sucia al salir el huésped y, en el turno de limpieza (7:00 a 17:00), se marca
+  limpia unas dos horas después.
+
+Los nombres, los códigos y los correos son al azar, y los correos son siempre de dominios `.test`, a los que la API
+nunca escribe. La simulación vive en el esquema `simulacion`
+(`supabase/migrations/20261127175721_simulacion.sql`): el respaldo no lo copia, porque solo copia `hotel`. Solo
+actúa sobre las estadías registradas en `simulacion.estadias`, así que no toca las reservas reales ni las de
+prueba del personal. Si recepción registra a mano la salida de un huésped simulado, la simulación ya no lo toca;
+y si el personal cambia el estado de limpieza de una habitación, la simulación deja de limpiarla.
+
+En el editor SQL de Supabase:
+
+| Qué hacer | Instrucción |
+|---|---|
+| Agregar huéspedes que llegan hoy (por ejemplo, 8 que se van en los próximos 14 días) | `SELECT * FROM simulacion.nuevo_lote(8, 14);` |
+| Registrar ya las salidas vencidas, sin esperar la corrida horaria | `SELECT simulacion.registrar_salidas();` |
+| Ver las estadías simuladas en curso | `SELECT r.codigo, r.fecha_salida, e.hora_salida FROM hotel.reservas r JOIN simulacion.estadias e ON e.reserva_id = r.id WHERE r.estado = 'en_curso';` |
+| Borrar toda la simulación (reservas, cobros, facturas y bitácora) | `SELECT simulacion.borrar();` |
+
+`nuevo_lote` solo ocupa habitaciones libres para toda la estadía, en servicio y listas para huéspedes; si no hay
+suficientes, crea las que quepan. La API no puede ejecutar estas funciones: solo el administrador de la base y
+`pg_cron`.
 
 ## Despliegue en Vercel
 
