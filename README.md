@@ -361,6 +361,43 @@ servicios** o como cargo libre, con descripción, categoría y precio.
 
 Una reserva puede tener dos facturas: la del hospedaje pagado en línea y la de la cuenta final.
 
+### Pago por SINPE Móvil o transferencia con comprobante
+
+Ninguna pasarela confirma un SINPE Móvil o una transferencia: los confirma una persona que revisa la cuenta del
+hotel. Por eso, además de la tarjeta, el cliente puede pagar por su cuenta y enviar el comprobante, que recepción
+revisa:
+
+1. **El cliente**, en **Mis reservas**, pulsa **SINPE o transferencia** en una reserva pendiente de pago. Ve el
+   monto exacto con IVA y los datos del hotel, que son de demostración (`SINPE_HOTEL`, `CUENTA_HOTEL`,
+   `TITULAR_CUENTA_HOTEL`), y envía el número del comprobante, el monto y, si quiere, una imagen o un PDF. El
+   navegador comprime la imagen: una foto de 8 MB queda en unos 400 KB. La reserva muestra **Comprobante en
+   revisión** y no se puede pagar con tarjeta mientras tanto.
+2. **Recepción** ve la sección **Comprobantes de pago**, con un contador, la reserva, el monto esperado y el
+   archivo. **Aceptar** registra el pago, confirma la reserva y emite la factura electrónica, igual que un pago
+   con tarjeta. **Rechazar** pide un motivo; el cliente lo ve en Mis reservas y puede enviar otro comprobante.
+
+Cada paso queda respaldado con un correo:
+
+| Momento | Destinatario | Asunto |
+|---|---|---|
+| El cliente envía el comprobante | Cliente | Recibimos su comprobante de pago |
+| El cliente envía el comprobante | Buzón de recepción (`CORREO_RECEPCION`; por omisión, el remitente) | Comprobante por revisar |
+| Recepción lo acepta | Cliente | Reserva confirmada, con la factura |
+| Recepción lo rechaza | Cliente | No pudimos confirmar su pago, con el motivo |
+
+Además, cada paso queda en la bitácora y en el historial de la reserva. Reglas que aplica la API y, varias, la
+base de datos:
+
+- **Un comprobante en revisión por reserva**, con el monto exacto de la reserva con IVA.
+- **Número único por método:** un mismo comprobante no respalda dos pagos; uno rechazado sí puede reenviarse.
+- **Archivo verificado por su contenido**, no por su nombre: solo JPG, PNG o PDF, de 1,5 MB como máximo. Recepción
+  lo ve desde el panel, sin que quede guardado en la caché del navegador.
+- **Nada se borra:** la API no puede borrar comprobantes ni cambiar lo que envió el cliente. El mantenimiento
+  borra la imagen 90 días después de revisada y conserva el registro como respaldo del pago.
+- **Cancelación:** si el cliente cancela antes de la revisión, el comprobante queda sin efecto. Si ya estaba
+  pagada, la devolución no pasa por la pasarela: queda registrada y el correo indica que se hará por el mismo
+  medio.
+
 ## Demostraciones del bloque 2
 
 ```bash
@@ -624,6 +661,7 @@ simulador. La función `hotel.mantenimiento()` los recorta con esta política:
 | Historial de `pg_cron` (`cron.job_run_details`) | Más de 7 días | Más de 3 días |
 | Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
 | Solicitudes de huéspedes resueltas, con sus mensajes | Más de 90 días | Más de 30 días |
+| Imágenes de comprobantes de pago ya revisados (el registro se conserva) | Más de 90 días | Más de 30 días |
 
 `pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye otras dos tareas programadas que no limpian la
 base: una libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*) y la
@@ -946,6 +984,11 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/servicios` | Recepcionista, gerente (con `todos=true`, gerencia ve también los inactivos) |
 | POST/PATCH | `/api/servicios`, `/api/servicios/{id}` | Gerente: agrega, cambia, activa o desactiva servicios |
 | GET | `/api/reservas/{codigo}/cuenta` | Cliente titular: su cuenta, sin nombres del personal |
+| GET/POST | `/api/reservas/{codigo}/comprobantes` | Cliente titular: datos para pagar por SINPE o transferencia y envío del comprobante |
+| GET | `/api/gestion/comprobantes` | Recepcionista, gerente: comprobantes por revisar o revisados (7 días) |
+| GET | `/api/gestion/comprobantes/{id}/archivo` | Recepcionista, gerente: la imagen o el PDF del comprobante |
+| POST | `/api/gestion/comprobantes/{id}/aceptar` | Recepcionista, gerente: registra el pago, confirma la reserva y la factura |
+| POST | `/api/gestion/comprobantes/{id}/rechazar` | Recepcionista, gerente: rechaza con motivo |
 | GET | `/api/solicitudes` | Personal, cada área lo suyo: bandeja; con `desde`, solo lo que cambió, y con `abierta` y `despues`, los mensajes nuevos de una conversación |
 | POST | `/api/solicitudes/{id}/mensajes` | Personal del área: responde al huésped |
 | PATCH | `/api/solicitudes/{id}` | Personal del área: tomar, pasar a otra área, resolver o reabrir |
@@ -1009,7 +1052,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 190 pruebas automáticas. Cubren:
+`api/tests` contiene 212 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -1052,6 +1095,11 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   pulsó el botón; no toca reservas en línea, de la agencia, ya hospedadas, con adelanto, de mañana ni tomadas
   después de la hora de garantía; es idempotente; respeta `HORA_GARANTIA`; la función responde sin la API (como
   la llama `pg_cron`); tablero, detalle y correo anuncian lo mismo que hace la función; permisos por rol.
+- Comprobantes de SINPE Móvil o transferencia: acuse al cliente y aviso a recepción, número normalizado y único,
+  monto exacto, archivo validado por su contenido (tipo y tamaño), un comprobante en revisión a la vez, solo el
+  titular, tarjeta bloqueada mientras se revisa, bandeja y archivo solo para recepción y gerencia, aceptación con
+  pago, confirmación y factura, rechazo con motivo y reenvío, cancelación con el comprobante pendiente o ya
+  pagado, retención de las imágenes y permisos de la base.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 

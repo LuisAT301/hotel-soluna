@@ -39,7 +39,8 @@ def pagar(
     Resultados posibles:
       200  cobro aprobado: reserva confirmada, factura creada y correo enviado.
       402  la tarjeta fue rechazada: el intento queda registrado y la reserva sigue pendiente.
-      409  la reserva no está pendiente de pago (por ejemplo, ya se pagó).
+      409  la reserva no está pendiente de pago (por ejemplo, ya se pagó) o tiene un comprobante
+           de SINPE Móvil o transferencia en revisión.
       422  la pasarela rechazó el token o la respuesta no corresponde a la reserva.
       503  la pasarela no responde: no se cobró nada y se puede reintentar.
     La fila de la reserva queda bloqueada durante el pago, así que dos pagos
@@ -48,6 +49,10 @@ def pagar(
     reserva = buscar_reserva(sesion, codigo, usuario, bloquear=True)
     if reserva.estado != "pendiente_pago":
         raise HTTPException(status.HTTP_409_CONFLICT, "La reserva no está pendiente de pago")
+    # Si ya pagó por SINPE Móvil o transferencia y recepción lo está revisando, no se cobra dos veces
+    if reserva.comprobante_estado == "pendiente":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya envió un comprobante de pago que recepción está "
+                                                      "revisando; espere la respuesta antes de pagar con tarjeta")
 
     # Se cobra el hospedaje más el IVA del 13 %
     monto = reserva.total + facturacion.impuesto_de(reserva.total)

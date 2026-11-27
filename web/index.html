@@ -25,6 +25,8 @@
   <script src="/solicitudes.js" defer></script>
   <!-- Cuenta de la habitación, catálogo de servicios y "Mi cuenta"; usa app.js y gestion.js -->
   <script src="/cuenta.js" defer></script>
+  <!-- Pagos por SINPE Móvil o transferencia con comprobante; usa app.js y cuenta.js -->
+  <script src="/comprobantes.js" defer></script>
 </head>
 <body data-modo="sitio">
   <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
@@ -279,6 +281,20 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- Comprobantes de pago por SINPE Móvil o transferencia que envían los clientes:
+           recepción ve cada uno con su archivo y lo acepta (confirma y factura) o lo rechaza. -->
+      <section id="sec-comprobantes" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Comprobantes de pago <span id="pendientes-comprobantes" class="contador" hidden></span></h2>
+          <button id="btn-recargar-comprobantes" class="boton claro" type="button">Actualizar</button>
+        </div>
+        <div class="vistas" role="group" aria-label="Comprobantes que se muestran">
+          <button type="button" data-vista-comprobantes="pendientes" aria-pressed="true">Por revisar</button>
+          <button type="button" data-vista-comprobantes="revisados" aria-pressed="false">Revisados (7 días)</button>
+        </div>
+        <div id="lista-comprobantes"></div>
       </section>
 
       <!-- Recepción: llegadas, salidas y huéspedes en casa, con búsqueda. "Gestionar" abre
@@ -537,6 +553,52 @@
         <button id="btn-pagar" class="boton" type="submit" value="enviar">Pagar</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Pago por SINPE Móvil o transferencia: el cliente paga por su cuenta y envía el comprobante,
+       que recepción revisa. La imagen se comprime en el navegador (comprobantes.js). -->
+  <dialog id="dlg-comprobante">
+    <form id="form-comprobante" method="dialog">
+      <h2>Pagar por SINPE Móvil o transferencia <span id="comp-codigo"></span></h2>
+      <dl class="montos">
+        <dt class="total">Monto exacto a pagar</dt><dd id="comp-monto" class="total"></dd>
+        <dt>SINPE Móvil</dt><dd id="comp-sinpe"></dd>
+        <dt>Cuenta IBAN</dt><dd id="comp-cuenta"></dd>
+        <dt>Titular</dt><dd id="comp-titular"></dd>
+      </dl>
+      <p class="nota">Pague el monto exacto y envíe aquí el comprobante. La recepción lo revisa y le confirma la
+        reserva por correo. Datos de demostración: no envíe dinero real.</p>
+      <div class="fila compacta">
+        <label>Cómo pagó
+          <select name="metodo">
+            <option value="sinpe">SINPE Móvil</option>
+            <option value="transferencia">Transferencia bancaria</option>
+          </select></label>
+        <label>Monto pagado (USD) <input name="monto" required inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?"></label>
+      </div>
+      <label>Número de comprobante <input name="numero" required minlength="4" maxlength="48" autocomplete="off"
+        pattern="[A-Za-z0-9 \-]{4,48}" placeholder="Por ejemplo, FT26110042"></label>
+      <label>Imagen o PDF del comprobante (opcional)
+        <input name="archivo" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+      <p id="comp-archivo-info" class="nota" aria-live="polite"></p>
+      <p id="comp-anteriores-titulo" class="nota" hidden>Comprobantes anteriores:</p>
+      <ul id="comp-anteriores" class="lista-simple"></ul>
+      <p id="error-comprobante" class="aviso error" hidden></p>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cancelar</button>
+        <button class="boton" type="submit" value="enviar">Enviar comprobante</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Imagen o PDF de un comprobante, para que recepción lo revise -->
+  <dialog id="dlg-archivo" class="dialogo-archivo">
+    <h2 id="archivo-titulo"></h2>
+    <div id="archivo-vista" class="archivo-vista"></div>
+    <div class="acciones">
+      <a id="archivo-abrir" class="boton claro" target="_blank" rel="noopener">Abrir en otra pestaña</a>
+      <button class="boton" type="button" data-cerrar>Cerrar</button>
+    </div>
   </dialog>
 
   <!-- Reseña verificada: requiere sesión y el código de una reservación propia ya cumplida.

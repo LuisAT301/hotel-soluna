@@ -11,6 +11,7 @@ preferible a descubrirlo a mitad de una solicitud.
 """
 import os
 from decimal import Decimal
+from email.utils import parseaddr
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -120,3 +121,11 @@ EMISOR_CEDULA = "3101999999"   # cédula jurídica ficticia
 HORA_GARANTIA = int(leer("HORA_GARANTIA", "17"))
 # Teléfono que aparece en los correos para cambios o cancelaciones (dato ficticio del prototipo)
 TELEFONO_HOTEL = leer("TELEFONO_HOTEL", "+506 2656-0000")
+
+# Pagos por SINPE Móvil o transferencia (etapa 6): datos que se muestran al cliente para pagar. Son
+# de demostración; la interfaz advierte que no se envíe dinero real.
+SINPE_HOTEL = leer("SINPE_HOTEL", "6000-0000")
+CUENTA_HOTEL = leer("CUENTA_HOTEL", "CR00 0000 0000 0000 0000 00")
+TITULAR_CUENTA_HOTEL = leer("TITULAR_CUENTA_HOTEL", "Hotel Soluna S. A. (cuenta de demostración)")
+# Buzón que recibe el aviso de cada comprobante por revisar; por omisión, la dirección del remitente
+CORREO_RECEPCION = leer("CORREO_RECEPCION", "") or parseaddr(CORREO_REMITENTE)[1]

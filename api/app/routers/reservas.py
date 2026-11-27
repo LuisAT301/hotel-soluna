@@ -30,7 +30,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from psycopg import errors as pg_errores
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,7 +39,7 @@ from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol, usuario_actual
 from ..esquemas import Disponible, NuevaReserva, ReservaSalida
 from ..facturacion import impuesto_de
-from ..modelos import Habitacion, Pago, Reserva, Tarifa, TipoHabitacion, Usuario
+from ..modelos import Comprobante, Habitacion, Pago, Reserva, Tarifa, TipoHabitacion, Usuario
 
 router = APIRouter(prefix="/api", tags=["reservas"])
 
@@ -192,6 +192,8 @@ def salida_reserva(r: Reserva) -> ReservaSalida:
         tiene_factura=r.factura is not None,
         creada_en=r.creada_en,
         garantia_hasta=garantia_de(r),
+        comprobante_estado=r.comprobante_estado,
+        comprobante_motivo=r.comprobante_motivo,
     )
 
 
@@ -426,7 +428,15 @@ def cancelar_reserva(codigo: str, tareas: BackgroundTasks, sesion: Session = Dep
     cobro = sesion.scalar(select(Pago).where(Pago.reserva_id == reserva.id, Pago.tipo == "cobro",
                                              Pago.estado == "aprobado"))
     reembolso = None
-    if cobro is not None:
+    if cobro is not None and cobro.transaccion.startswith("comp_"):
+        # Pagado por SINPE Móvil o transferencia (comprobante aceptado): la pasarela no conoce ese pago.
+        # La devolución la hace el hotel por el mismo medio; aquí queda registrada.
+        reembolso = Pago(reserva_id=reserva.id, tipo="reembolso", estado="aprobado",
+                         transaccion=f"dev_{cobro.transaccion}", monto=cobro.monto, marca=cobro.marca)
+        sesion.add(reembolso)
+        registrar(sesion, usuario, "reembolso", "reserva", reserva.codigo, transaccion=reembolso.transaccion,
+                  monto=str(cobro.monto), medio=cobro.marca)
+    elif cobro is not None:
         try:
             resultado = servicios_externos.reembolsar(cobro.transaccion)
         except (servicios_externos.ServicioNoDisponible, servicios_externos.SolicitudRechazada):
@@ -440,6 +450,12 @@ def cancelar_reserva(codigo: str, tareas: BackgroundTasks, sesion: Session = Dep
         registrar(sesion, usuario, "reembolso", "reserva", reserva.codigo,
                   transaccion=reembolso.transaccion, monto=str(cobro.monto))
 
+    # Un comprobante que recepción no alcanzó a revisar queda sin efecto
+    anulados = sesion.execute(
+        update(Comprobante).where(Comprobante.reserva_id == reserva.id, Comprobante.estado == "pendiente")
+        .values(estado="rechazado", motivo="La reserva se canceló antes de revisar el comprobante.",
+                revisado_por=usuario.id, revisado_en=func.now())).rowcount
+
     anterior = reserva.estado
     reserva.estado = "cancelada"
     reserva.actualizada_en = func.now()
@@ -447,8 +463,16 @@ def cancelar_reserva(codigo: str, tareas: BackgroundTasks, sesion: Session = Dep
     sesion.commit()
     sesion.refresh(reserva)
 
-    aviso = (f"\nSe reembolsaron USD {reembolso.monto} a la tarjeta {reembolso.marca} terminada en "
-             f"{reembolso.ultimos4}. Puede tardar unos días en reflejarse.\n") if reembolso else ""
+    aviso = ""
+    if reembolso and reembolso.transaccion.startswith("dev_comp_"):
+        aviso = (f"\nLe devolveremos USD {reembolso.monto} por {reembolso.marca} a la cuenta desde la que pagó, "
+                 f"en un plazo de 5 días hábiles.\n")
+    elif reembolso:
+        aviso = (f"\nSe reembolsaron USD {reembolso.monto} a la tarjeta {reembolso.marca} terminada en "
+                 f"{reembolso.ultimos4}. Puede tardar unos días en reflejarse.\n")
+    if anulados:
+        aviso += ("\nEl comprobante de pago que envió quedó sin efecto. Si ya transfirió el dinero, llámenos al "
+                  f"{config.TELEFONO_HOTEL} para coordinar la devolución.\n")
     correo.programar(
         tareas, reserva.correo_huesped, f"Reserva cancelada {reserva.codigo}",
         f"Hola, {reserva.nombre_huesped}:\n\nSu reserva {reserva.codigo} del "

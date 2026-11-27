@@ -10,8 +10,8 @@ El mismo objeto ``app`` se ejecuta de dos maneras:
 from fastapi import FastAPI, Request
 
 from .dependencias import REPLICA
-from .routers import (auth, cuentas, gestion, habitaciones, ota, pagos, publico, resenas, reservas, sistema,
-                      solicitudes, usuarios)
+from .routers import (auth, comprobantes, cuentas, gestion, habitaciones, ota, pagos, publico, resenas, reservas,
+                      sistema, solicitudes, usuarios)
 
 # La documentación interactiva (Swagger) queda bajo /api para que Nginx y los
 # reenvíos de Vercel, que solo dejan pasar /api/*, también la publiquen.
@@ -32,12 +32,13 @@ app = FastAPI(
 #   solicitudes   chat entre huéspedes alojados y el personal, con simulador de pedidos
 #   cuentas       cuenta de la habitación: consumos, pagos en caja y catálogo de servicios
 #   pagos         cobro con la pasarela, factura electrónica y reembolso
+#   comprobantes  pagos por SINPE Móvil o transferencia que recepción revisa
 #   ota           avisos firmados de la agencia de viajes en línea
 #   publico       datos del sitio (tipos de habitación) y suscripciones
 #   resenas       reseñas verificadas de huéspedes con una estadía cumplida
 #   sistema       salud del servicio y bitácora
-for modulo in (auth, usuarios, habitaciones, reservas, gestion, cuentas, solicitudes, pagos, ota, publico, resenas,
-               sistema):
+for modulo in (auth, usuarios, habitaciones, reservas, gestion, cuentas, solicitudes, pagos, comprobantes, ota, publico,
+               resenas, sistema):
     app.include_router(modulo.router)
 
 
