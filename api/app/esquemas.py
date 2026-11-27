@@ -296,3 +296,59 @@ class DetalleReserva(BaseModel):
     pagada_en_linea: bool
     acciones: list[Literal["check_in", "check_out", "modificar", "cancelar"]]
     historial: list[EventoReserva]
+
+
+# ---------------------------------------------------------------------
+# Tablero de habitaciones (panel del personal, etapa 2)
+# ---------------------------------------------------------------------
+SituacionHabitacion = Literal["libre", "ocupada", "sale_hoy", "llega_hoy", "llegada_atrasada",
+                              "fuera_de_servicio"]
+
+
+class ReservaEnTablero(BaseModel):
+    """Lo mínimo de una reserva que recepción necesita ver de un vistazo en el tablero."""
+    codigo: str
+    nombre_huesped: str
+    personas: int
+    fecha_entrada: date
+    fecha_salida: date
+    estado: str
+
+
+class HabitacionEnTablero(BaseModel):
+    """Una habitación hoy: su estado físico, su situación y las reservas que la tocan.
+
+    ``ocupante`` es el huésped alojado (reserva en curso). ``llegada`` es la
+    reserva que debe ingresar hoy o ya debió hacerlo. En un día de cambio de
+    huésped puede haber las dos: uno sale y otro llega.
+    """
+    id: int
+    numero: str
+    piso: int
+    tipo: str
+    capacidad: int
+    estado_limpieza: EstadoLimpieza
+    fuera_de_servicio: bool
+    situacion: SituacionHabitacion
+    ocupante: ReservaEnTablero | None
+    llegada: ReservaEnTablero | None
+
+
+class ResumenTablero(BaseModel):
+    """Indicadores del día para la cabecera del tablero."""
+    habitaciones: int
+    en_servicio: int
+    ocupadas: int
+    ocupacion: Decimal      # porcentaje de las habitaciones en servicio, con un decimal
+    llegadas: int           # pendientes de ingresar (hoy o atrasadas)
+    salidas: int            # huéspedes que deben salir hoy o ya debieron
+    libres_listas: int      # libres hoy, sin llegada pendiente, en servicio y limpias
+    por_limpiar: int        # sucias o en limpieza
+    fuera_de_servicio: int
+
+
+class Tablero(BaseModel):
+    """Situación de todas las habitaciones en la fecha de hoy (hora de Costa Rica)."""
+    fecha: date
+    resumen: ResumenTablero
+    habitaciones: list[HabitacionEnTablero]

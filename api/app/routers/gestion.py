@@ -1,8 +1,9 @@
-"""Gestión de reservas en recepción: búsqueda, ingreso, salida y cambios.
+"""Gestión de reservas en recepción: tablero, búsqueda, ingreso, salida y cambios.
 
-Es la primera etapa del panel del personal. Todas las rutas son para
+Son las etapas 1 y 2 del panel del personal. Todas las rutas son para
 recepción y gerencia:
 
+  GET   /api/gestion/tablero                         situación de cada habitación hoy (etapa 2).
   GET   /api/gestion/reservas                        busca por código, huésped, correo o habitación.
   GET   /api/gestion/reservas/{codigo}               detalle con habitación, acciones posibles e historial.
   GET   /api/gestion/reservas/{codigo}/alternativas  habitaciones a las que se puede mover, con su precio.
@@ -32,18 +33,19 @@ debe estar libre desde su fecha de entrada; la ruta de alternativas solo
 ofrece las que cumplen esa condición.
 """
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from psycopg import errors as pg_errores
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import correo
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol
-from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, ReservaSalida,
-                        VistaRecepcion)
+from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, HabitacionEnTablero,
+                        ReservaEnTablero, ReservaSalida, ResumenTablero, Tablero, VistaRecepcion)
 from ..facturacion import impuesto_de
 from ..modelos import Habitacion, Pago, RegistroBitacora, Reserva, Usuario
 from .reservas import (ESTADOS_CANCELABLES, MAX_NOCHES, buscar_reserva, calcular_total,
@@ -229,6 +231,86 @@ def alternativas(
                                      capacidad=h.tipo.capacidad, estado_limpieza=h.estado_limpieza,
                                      total=totales[h.tipo_id], actual=actual))
     return resultado
+
+
+# ---------------------------------------------------------------------
+# Tablero de habitaciones (etapa 2)
+# ---------------------------------------------------------------------
+def situacion_de(habitacion: Habitacion, ocupante: ReservaEnTablero | None,
+                 llegada: ReservaEnTablero | None, dia: date) -> str:
+    """Situación de una habitación hoy, en orden de prioridad.
+
+    Un huésped alojado manda sobre todo lo demás, porque es quien está en la
+    habitación ahora; después, que esté fuera de servicio; después, una
+    llegada pendiente. El tablero muestra igual al ocupante y a la llegada
+    aunque la situación resuma solo uno de los dos.
+    """
+    if ocupante is not None:
+        return "sale_hoy" if ocupante.fecha_salida <= dia else "ocupada"
+    if habitacion.fuera_de_servicio:
+        return "fuera_de_servicio"
+    if llegada is not None:
+        return "llegada_atrasada" if llegada.fecha_entrada < dia else "llega_hoy"
+    return "libre"
+
+
+@router.get("/tablero", response_model=Tablero)
+def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECEPCION)):
+    """Situación de cada habitación hoy, con sus reservas activas y los indicadores del día.
+
+    Algoritmo (dos consultas, sin importar cuántas reservas haya):
+      1. Lee las 46 habitaciones con su tipo.
+      2. Lee solo las reservas que tocan el día: las en curso (el huésped está
+         en el hotel, aunque su salida ya haya pasado) y las confirmadas o
+         pendientes de pago cuya estadía ya empezó y aún no termina (llegadas
+         de hoy o atrasadas). Pide solo las columnas que el tablero muestra.
+      3. Reparte esas reservas por habitación y calcula la situación de cada una.
+      4. Cuenta los indicadores: ocupación, llegadas, salidas, habitaciones
+         libres y listas, por limpiar y fuera de servicio.
+    El panel la consulta una vez por minuto y solo mientras la pantalla está
+    visible, para no gastar consultas del plan gratuito de la base.
+    """
+    dia = hoy()
+    habitaciones = sesion.scalars(select(Habitacion).order_by(Habitacion.piso, Habitacion.numero)).all()
+    filas = sesion.execute(
+        select(Reserva.habitacion_id, Reserva.codigo, Reserva.nombre_huesped, Reserva.personas,
+               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado)
+        .where(or_(Reserva.estado == "en_curso",
+                   and_(Reserva.estado.in_(("pendiente_pago", "confirmada")),
+                        Reserva.fecha_entrada <= dia, Reserva.fecha_salida > dia)))
+        .order_by(Reserva.fecha_entrada))
+
+    ocupantes: dict[int, ReservaEnTablero] = {}
+    llegadas: dict[int, ReservaEnTablero] = {}
+    for fila in filas:
+        reserva = ReservaEnTablero(codigo=fila.codigo, nombre_huesped=fila.nombre_huesped, personas=fila.personas,
+                                   fecha_entrada=fila.fecha_entrada, fecha_salida=fila.fecha_salida,
+                                   estado=fila.estado)
+        destino = ocupantes if fila.estado == "en_curso" else llegadas
+        destino.setdefault(fila.habitacion_id, reserva)   # la más antigua, si hubiera dos
+
+    resultado = []
+    for h in habitaciones:
+        ocupante, llegada = ocupantes.get(h.id), llegadas.get(h.id)
+        resultado.append(HabitacionEnTablero(
+            id=h.id, numero=h.numero, piso=h.piso, tipo=h.tipo.nombre, capacidad=h.tipo.capacidad,
+            estado_limpieza=h.estado_limpieza, fuera_de_servicio=h.fuera_de_servicio,
+            situacion=situacion_de(h, ocupante, llegada, dia), ocupante=ocupante, llegada=llegada))
+
+    fuera = sum(h.fuera_de_servicio for h in resultado)
+    en_servicio = len(resultado) - fuera
+    ocupadas = sum(h.ocupante is not None for h in resultado)
+    ocupacion = (Decimal(ocupadas * 100) / en_servicio if en_servicio else Decimal(0)) \
+        .quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    resumen = ResumenTablero(
+        habitaciones=len(resultado), en_servicio=en_servicio, ocupadas=ocupadas, ocupacion=ocupacion,
+        llegadas=sum(h.llegada is not None for h in resultado),
+        salidas=sum(h.situacion == "sale_hoy" for h in resultado),
+        libres_listas=sum(h.situacion == "libre" and h.estado_limpieza in LISTA_PARA_HUESPED for h in resultado),
+        por_limpiar=sum(h.estado_limpieza in ("sucia", "en_limpieza") for h in resultado),
+        fuera_de_servicio=fuera,
+    )
+    return Tablero(fecha=dia, resumen=resumen, habitaciones=resultado)
 
 
 # ---------------------------------------------------------------------

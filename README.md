@@ -147,7 +147,7 @@ sesión como `cliente@soluna.test` y opinar sobre `SOL-DEMO01`. Cada estadía ad
 |---|---|
 | Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
 | Cliente | La misma página de inicio, más Mis reservas (paga en línea y consulta su factura) |
-| Recepcionista | Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
+| Recepcionista | Habitaciones hoy (tablero por piso), Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
 | Limpieza | Habitaciones (cambia el estado de limpieza) |
 | Mantenimiento | Habitaciones (solo lectura) |
 | Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
@@ -183,9 +183,33 @@ El pie de página muestra qué réplica de la API respondió la última solicitu
   **Opinar** con el código ya escrito.
 - **Datos ficticios:** el hotel, el teléfono, la dirección y las reseñas de ejemplo son de demostración.
 
+### Tablero de habitaciones (panel del personal)
+
+Recepción y gerencia ven primero la tarjeta **Habitaciones hoy**: las 46 habitaciones agrupadas por piso, cada
+una con su número, su estado de limpieza, su situación y el código de la reserva activa. Pulsar el código abre
+la gestión de esa reserva (ingreso, salida, cambios).
+
+| Situación | Cuándo |
+|---|---|
+| Libre | Nadie alojado ni por llegar hoy |
+| Llega hoy | Una reserva confirmada o pendiente de pago empieza hoy ("Sin pagar" si aún no se pagó) |
+| Llegada atrasada | La estadía empezó un día anterior y nadie registró el ingreso |
+| Ocupada | Hay un huésped alojado |
+| Sale hoy | El huésped alojado debe salir hoy ("Salida atrasada" si debió salir antes); si además llega otro, la tarjeta muestra las dos reservas |
+| Fuera de servicio | La habitación no se ofrece; si tenía una llegada, avisa que hay que asignar otra |
+
+Arriba se resumen la ocupación, las llegadas y salidas pendientes, las habitaciones libres y listas, las que
+faltan por limpiar y las fuera de servicio. La leyenda funciona como filtro: al pulsar una situación se
+resaltan solo esas habitaciones. Cada situación lleva además su nombre escrito, para no depender del color.
+
+**Consumo de la base:** el tablero se actualiza solo una vez por minuto, y únicamente mientras la pestaña está
+visible y el tablero en pantalla; al volver a la pestaña se actualiza enseguida si los datos tienen más de un
+minuto. Cada actualización cuesta tres consultas (sesión, habitaciones y reservas del día), sin importar
+cuántas reservas haya. Una pantalla abierta durante un turno de 8 horas hace unas 1440 consultas pequeñas.
+
 ### Recepción (panel del personal)
 
-Recepción y gerencia ven primero la tarjeta **Recepción**, con cinco vistas:
+Debajo del tablero está la tarjeta **Recepción**, con cinco vistas:
 
 | Vista | Qué muestra |
 |---|---|
@@ -748,6 +772,7 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/suscripciones` | Gerente |
 | GET | `/api/resenas` | Público: promedio, total y las reseñas más recientes |
 | POST | `/api/resenas` | Cuenta activa con una reservación propia ya cumplida (una reseña por reservación) |
+| GET | `/api/gestion/tablero` | Recepcionista, gerente: situación de cada habitación hoy e indicadores del día |
 | GET | `/api/gestion/reservas` | Recepcionista, gerente: búsqueda y vistas de recepción (`vista`, `q`) |
 | GET | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: detalle con acciones posibles e historial |
 | GET | `/api/gestion/reservas/{codigo}/alternativas` | Recepcionista, gerente: habitaciones a las que se puede mover, con su total |
@@ -804,7 +829,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 118 pruebas automáticas. Cubren:
+`api/tests` contiene 126 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -829,6 +854,9 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   ocupada, salida, habitación sucia, limpieza e ingreso), ingresos rechazados, llegada atrasada, salida
   anticipada que libera noches, cambios de habitación, fechas y personas con total recalculado, traslape al
   mover, reglas para huéspedes alojados, reservas pagadas que no cambian de monto y alternativas ofrecidas.
+- Tablero de habitaciones: permisos, cada situación (incluido el día de cambio de huésped, la salida atrasada,
+  la reserva sin pagar y la habitación fuera de servicio con una llegada), indicadores, cambios tras el ingreso y
+  la salida, y un número fijo de consultas aunque crezcan las reservas.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 
