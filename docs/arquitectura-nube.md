@@ -203,6 +203,11 @@ La carga de consultas se acota de otra forma: la API y el simulador tienen un l�
 60 s para una transacción inactiva, en lugar de los minutos que permite PostgreSQL por omisión. Así, una
 consulta defectuosa no puede acaparar la capacidad compartida del plan gratuito.
 
+El tablero de habitaciones del panel del personal, la única pantalla que se actualiza sola, se diseñó con el
+mismo criterio. Cada actualización cuesta tres consultas, sin importar cuántas reservas haya, y se pide una vez
+por minuto solo mientras la pestaña está visible. Una pantalla abierta durante un turno de 8 horas hace unas
+1440 consultas pequeñas, y ninguna si queda en segundo plano.
+
 ## 9. Verificación
 
 La prueba `pruebas-nube/prueba_vercel.py` recorre el sistema desplegado como lo haría un huésped y comprueba
@@ -211,7 +216,7 @@ factura aceptada, pago repetido, cancelación con reembolso, protección del pan
 servicios, el registro en Hacienda y el aviso firmado de la OTA. Cancela al final las reservas que crea.
 
 En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con una mediana de 227 ms y un
-máximo de 605 ms por paso. Las 118 pruebas automáticas de `api/tests` cubren, además, los casos que no
+máximo de 605 ms por paso. Las 126 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
 ### 9.1. Prueba de carga

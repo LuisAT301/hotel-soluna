@@ -19,6 +19,8 @@
   <script src="/app.js" defer></script>
   <!-- Recepción del personal; usa las utilidades de app.js, por eso se carga después -->
   <script src="/gestion.js" defer></script>
+  <!-- Tablero de habitaciones; usa app.js y abre la gestión de gestion.js -->
+  <script src="/tablero.js" defer></script>
 </head>
 <body data-modo="sitio">
   <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
@@ -194,6 +196,7 @@
 
     <!-- ============================================================ reservar -->
     <!-- Herramientas de trabajo. Cada tarjeta sec-* se muestra según el rol (VISTAS en app.js):
+         tablero       recepción y gerencia (situación de cada habitación hoy, en tablero.js)
          recepcion     recepción y gerencia (llegadas, salidas y gestión de reservas, en gestion.js)
          buscar        público, clientes, recepción y gerencia
          reservas      clientes (las suyas), recepción y gerencia
@@ -206,6 +209,22 @@
         <p>Elija las fechas para ver las habitaciones libres y el precio total. El pago se hace en línea con tarjeta
           y la factura electrónica llega a su correo.</p>
       </div>
+      <!-- Tablero: cada habitación hoy, por piso, con su situación, su limpieza y la reserva activa.
+           El código de la reserva abre su gestión. Se actualiza solo cada minuto mientras la
+           pestaña está visible; la leyenda funciona como filtro. -->
+      <section id="sec-tablero" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Habitaciones hoy <small id="fecha-tablero" class="fecha-titulo"></small></h2>
+          <div class="botones-fila centrados">
+            <span id="actualizado-tablero" class="nota sin-margen" aria-live="polite"></span>
+            <button id="btn-recargar-tablero" class="boton claro" type="button">Actualizar</button>
+          </div>
+        </div>
+        <dl id="resumen-tablero" class="indicadores"></dl>
+        <ul id="leyenda-tablero" class="leyenda" aria-label="Filtrar por situación"></ul>
+        <div id="pisos-tablero"></div>
+      </section>
+
       <!-- Recepción: llegadas, salidas y huéspedes en casa, con búsqueda. "Gestionar" abre
            el diálogo dlg-gestion con el check-in, el check-out, los cambios y el historial. -->
       <section id="sec-recepcion" class="tarjeta" hidden>

@@ -410,6 +410,99 @@ dialog.ancho { width: min(720px, 94vw); }
 .historial .quien, .historial .detalle { color: var(--gris); font-size: .85rem; }
 
 /* =====================================================================
+   Tablero de habitaciones (tablero.js)
+   Cada situación tiene un color de fondo y de borde, y además su nombre
+   escrito en la tarjeta, para no depender solo del color.
+   ===================================================================== */
+.fecha-titulo { font-family: var(--f-texto); font-size: .9rem; font-weight: 500; color: var(--gris); }
+.botones-fila.centrados { align-items: center; }
+.nota.sin-margen { margin: 0; }
+
+/* Indicadores del día */
+.indicadores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.indicador { border: 1px solid var(--borde); border-radius: var(--radio); padding: 10px 12px; background: #FBF8F2; }
+.indicador dt { font-size: .8rem; color: var(--gris); }
+.indicador dd { margin: 2px 0 0; display: flex; flex-direction: column; }
+.indicador strong { font-size: 1.5rem; color: var(--oceano); line-height: 1.2; }
+.indicador small { font-size: .78rem; color: var(--gris); }
+
+/* Colores de cada situación: fondo suave y borde fuerte */
+.sit-libre { --sit-fondo: #EFF8F5; --sit-borde: var(--laguna); }
+.sit-ocupada { --sit-fondo: #E6EEF5; --sit-borde: var(--oceano); }
+.sit-llega_hoy { --sit-fondo: #FDF3E7; --sit-borde: var(--sol-oscuro); }
+.sit-llegada_atrasada { --sit-fondo: #F9E1DB; --sit-borde: #8E3524; }
+.sit-sale_hoy { --sit-fondo: #FBECE8; --sit-borde: var(--coral); }
+.sit-fuera_de_servicio { --sit-fondo: repeating-linear-gradient(45deg, #EEECE8 0 8px, #E2DED6 8px 16px); --sit-borde: var(--gris); }
+
+/* Leyenda: cada elemento filtra el tablero por esa situación */
+.leyenda { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.leyenda button {
+  font: inherit;
+  font-size: .85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  background: var(--blanco);
+  color: var(--texto);
+}
+.leyenda button[aria-pressed="true"] { border-color: var(--sit-borde); box-shadow: inset 0 0 0 1px var(--sit-borde); font-weight: 600; }
+.leyenda .muestra { width: 12px; height: 12px; border-radius: 3px; background: var(--sit-fondo); border: 2px solid var(--sit-borde); }
+
+/* Pisos y tarjetas */
+.piso + .piso { margin-top: 16px; }
+.piso h3 { margin: 0 0 8px; font-size: 1rem; color: var(--oceano); }
+.piso h3 small { font-weight: 400; color: var(--gris); text-transform: none; }
+.cuadricula { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.hab {
+  background: var(--sit-fondo);
+  border: 1px solid var(--borde);
+  border-top: 4px solid var(--sit-borde);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: .82rem;
+  min-height: 92px;
+  transition: opacity .15s;
+}
+.hab header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.hab .numero { font-size: 1.15rem; color: var(--oceano); }
+.hab .estado { font-size: .7rem; padding: 1px 6px; }
+.hab .situacion { margin: 0; font-weight: 600; color: var(--sit-borde); }
+.hab .reserva { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--texto); }
+.hab .etiqueta-llega { font-weight: 600; color: var(--sol-oscuro); }
+.hab .alerta { font-weight: 600; color: #8E3524; }
+.codigo-reserva {
+  font: 600 .78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--sit-borde);
+  background: var(--blanco);
+  color: var(--oceano);
+}
+.codigo-reserva:hover { background: var(--laguna-claro); }
+
+/* Con un filtro activo, las demás habitaciones quedan atenuadas */
+#pisos-tablero[data-filtro] .hab { opacity: .25; }
+#pisos-tablero[data-filtro="libre"] .hab.sit-libre,
+#pisos-tablero[data-filtro="ocupada"] .hab.sit-ocupada,
+#pisos-tablero[data-filtro="llega_hoy"] .hab.sit-llega_hoy,
+#pisos-tablero[data-filtro="llegada_atrasada"] .hab.sit-llegada_atrasada,
+#pisos-tablero[data-filtro="sale_hoy"] .hab.sit-sale_hoy,
+#pisos-tablero[data-filtro="fuera_de_servicio"] .hab.sit-fuera_de_servicio { opacity: 1; }
+
+/* =====================================================================
    Pantallas angostas
    ===================================================================== */
 /* Tabletas: el menú se convierte en un panel desplegable que abre el botón ☰ */
@@ -449,4 +542,8 @@ dialog.ancho { width: min(720px, 94vw); }
   .ficha dt { margin-top: 6px; }
   .historial time { grid-row: auto; }
   .fila.compacta { flex-wrap: wrap; }
+  .cuadricula { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  #sec-tablero .encabezado { flex-wrap: wrap; }
+  #sec-tablero .encabezado .botones-fila { width: 100%; justify-content: space-between; }
+  .indicadores { grid-template-columns: repeat(2, 1fr); }
 }

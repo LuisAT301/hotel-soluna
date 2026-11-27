@@ -87,6 +87,7 @@ function elegirVista(vista) {
 /** Recarga todo lo que cambia después de una acción de recepción. */
 async function refrescarPanel() {
   const tareas = [cargarRecepcion(), cargarHabitaciones()];
+  if (!$('#sec-tablero').hidden) tareas.push(cargarTablero());   // definida en tablero.js
   if (!$('#sec-reservas').hidden) tareas.push(cargarReservas());
   if (ultimaBusqueda) tareas.push(buscar(ultimaBusqueda));
   await Promise.all(tareas);

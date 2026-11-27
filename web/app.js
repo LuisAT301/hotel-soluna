@@ -30,10 +30,10 @@ const PERSONAL = ['recepcionista', 'limpieza', 'mantenimiento', 'gerente'];
 const VISTAS = {
   publico: ['buscar'],
   cliente: ['buscar', 'reservas'],
-  recepcionista: ['recepcion', 'buscar', 'reservas', 'habitaciones'],
+  recepcionista: ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones'],
   limpieza: ['habitaciones'],
   mantenimiento: ['habitaciones'],
-  gerente: ['recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
+  gerente: ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
 };
 
 // Formato de dinero en dólares con convenciones de Costa Rica, y atajo para buscar elementos
@@ -175,7 +175,7 @@ async function intentar(accion) {
 function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
   document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
-  for (const nombre of ['recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
+  for (const nombre of ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
     $(`#sec-${nombre}`).hidden = !vista.includes(nombre);
   }
   $('#btn-entrar').hidden = Boolean(sesion.token);
@@ -183,6 +183,7 @@ function mostrarVista() {
   $('#usuario-actual').textContent = sesion.token ? `${sesion.nombre} · ${ROLES[sesion.rol]}` : '';
   $('#titulo-reservas').textContent = sesion.rol === 'cliente' ? 'Mis reservas' : 'Reservas';
 
+  if (vista.includes('tablero')) intentar(cargarTablero);       // definida en tablero.js
   if (vista.includes('recepcion')) intentar(cargarRecepcion);   // definida en gestion.js
   if (vista.includes('reservas')) intentar(cargarReservas);
   if (vista.includes('habitaciones')) intentar(cargarHabitaciones);
@@ -402,6 +403,8 @@ function selectorLimpieza(h) {
   selector.addEventListener('change', () => intentar(async () => {
     await api(`/api/habitaciones/${h.id}/limpieza`, { metodo: 'PATCH', json: { estado: selector.value } });
     avisar(`Habitación ${h.numero}: ${LIMPIEZA[selector.value].toLowerCase()}.`);
+    // El tablero muestra la limpieza de cada habitación: se actualiza si está a la vista
+    if (!$('#sec-tablero').hidden) await cargarTablero();
   }));
   return selector;
 }
