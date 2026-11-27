@@ -146,10 +146,10 @@ sesión como `cliente@soluna.test` y opinar sobre `SOL-DEMO01`. Cada estadía ad
 | Rol | Secciones |
 |---|---|
 | Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
-| Cliente | La misma página de inicio, más Mis reservas (paga en línea y consulta su factura) |
-| Recepcionista | Habitaciones hoy (tablero por piso), Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
-| Limpieza | Habitaciones (cambia el estado de limpieza) |
-| Mantenimiento | Habitaciones (solo lectura) |
+| Cliente | La misma página de inicio, más Mis reservas (paga en línea, consulta su factura y, durante la estadía, escribe al hotel) |
+| Recepcionista | Habitaciones hoy (tablero por piso), Solicitudes de huéspedes (todas las áreas), Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
+| Limpieza | Solicitudes de huéspedes de limpieza, Habitaciones (cambia el estado de limpieza) |
+| Mantenimiento | Solicitudes de huéspedes de mantenimiento, Habitaciones (solo lectura) |
 | Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
 
 El personal entra directo a su panel de trabajo, sin la página de inicio.
@@ -206,6 +206,51 @@ resaltan solo esas habitaciones. Cada situación lleva además su nombre escrito
 visible y el tablero en pantalla; al volver a la pestaña se actualiza enseguida si los datos tienen más de un
 minuto. Cada actualización cuesta tres consultas (sesión, habitaciones y reservas del día), sin importar
 cuántas reservas haya. Una pantalla abierta durante un turno de 8 horas hace unas 1440 consultas pequeñas.
+
+### Solicitudes de huéspedes (chat)
+
+Un huésped alojado escribe al hotel desde **Mis reservas** con el botón **Contactar al hotel** (en la estadía en
+curso) o, si la reserva la hizo recepción a nombre de su correo, desde el mismo botón arriba de la lista,
+escribiendo su código. Solo puede escribir durante la estadía, entre el ingreso y la salida, y hasta 5 mensajes
+por minuto. Al primer mensaje elige el tema: recepción y otros, limpieza y amenidades, o algo que no funciona.
+
+Cada conversación es una **solicitud**, que atiende un área:
+
+| Estado | Qué significa |
+|---|---|
+| Abierta | El huésped escribió y nadie la ha tomado |
+| En atención | Alguien la tomó o respondió |
+| Resuelta | Se marcó como resuelta, o el huésped registró su salida |
+
+Mientras una solicitud siga abierta, los mensajes nuevos del huésped se suman a ella; después de resuelta, el
+siguiente mensaje abre otra. La base garantiza que haya una sola abierta por reserva.
+
+El personal ve la tarjeta **Solicitudes de huéspedes**, con la bandeja a la izquierda y la conversación elegida a
+la derecha. Primero aparecen las que esperan respuesta, con el tiempo de espera, y un contador rojo indica
+cuántas faltan por responder. Cada área ve lo suyo: limpieza solo lo de limpieza, mantenimiento solo lo de
+mantenimiento; recepción y gerencia, todo. Desde la conversación se responde, se toma la solicitud, se pasa a
+otra área o se marca resuelta. El huésped no ve el nombre de quien le responde: ve "Hotel Soluna".
+
+**Simulador de huéspedes:** recepción y gerencia tienen el botón **Simular un pedido**, que elige al azar a un
+huésped alojado y envía un pedido típico ("El aire acondicionado no enfría", "¿Nos traen dos toallas más?",
+"Quisiéramos un taxi al aeropuerto"). Requiere al menos un huésped con el ingreso registrado.
+
+**Consumo de la base:** las pantallas preguntan solo mientras están visibles y piden únicamente lo nuevo: las
+solicitudes que cambiaron desde la consulta anterior y los mensajes posteriores al último que ya tienen.
+
+| Pantalla | Frecuencia | Sentencias SQL por consulta |
+|---|---|---|
+| Bandeja del personal | Cada 30 s | 2 |
+| Bandeja con una conversación abierta | Cada 10 s | 4 como máximo |
+| Chat del huésped abierto | Cada 10 s | 4 como máximo |
+
+Con la pestaña en segundo plano o el chat cerrado, no hay consultas. Las solicitudes resueltas se borran,
+con sus mensajes, a los 90 días (30 con ocupación alta), como parte del mantenimiento automático.
+
+Para probarlo en el sitio:
+1. Entre como `recepcion@soluna.test`, registre el ingreso de alguna reserva y pulse **Simular un pedido**.
+2. Para el lado del huésped, reserve con entrada hoy a nombre de `cliente@soluna.test` y registre su ingreso.
+3. Entre como `cliente@soluna.test`, pulse **Contactar al hotel** y escriba el código de la reserva.
 
 ### Recepción (panel del personal)
 
@@ -501,6 +546,7 @@ simulador. La función `hotel.mantenimiento()` los recorta con esta política:
 | Bitácora | Registros de más de 365 días | Registros de más de 90 días |
 | Historial de `pg_cron` (`cron.job_run_details`) | Más de 7 días | Más de 3 días |
 | Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
+| Solicitudes de huéspedes resueltas, con sus mensajes | Más de 90 días | Más de 30 días |
 
 `pg_cron` la ejecuta en Supabase con dos tareas:
 
@@ -779,6 +825,12 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | POST | `/api/gestion/reservas/{codigo}/check-in` | Recepcionista, gerente |
 | POST | `/api/gestion/reservas/{codigo}/check-out` | Recepcionista, gerente |
 | PATCH | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: cambia habitación, fechas o personas |
+| GET | `/api/solicitudes` | Personal, cada área lo suyo: bandeja; con `desde`, solo lo que cambió, y con `abierta` y `despues`, los mensajes nuevos de una conversación |
+| POST | `/api/solicitudes/{id}/mensajes` | Personal del área: responde al huésped |
+| PATCH | `/api/solicitudes/{id}` | Personal del área: tomar, pasar a otra área, resolver o reabrir |
+| POST | `/api/solicitudes/simular` | Recepcionista, gerente: pedido de un huésped alojado al azar |
+| GET | `/api/reservas/{codigo}/solicitudes` | Cliente titular de la reserva (por cuenta o por correo): su conversación |
+| POST | `/api/reservas/{codigo}/solicitudes` | Cliente titular, solo durante la estadía y hasta 5 mensajes por minuto |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
@@ -797,6 +849,10 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - La regla `sin_traslape` impide la sobreventa incluso con solicitudes simultáneas.
   - La API usa un usuario con privilegios mínimos: no puede borrar reservas, alterar la bitácora ni cambiar tablas.
 - **Bitácora:** registra quién hizo qué, cuándo y desde qué réplica.
+- **Chat con huéspedes:** solo escribe el titular de la reserva, durante su estadía y hasta 5 mensajes por
+  minuto; un código ajeno responde igual que uno inexistente. Cada área del personal ve solo sus solicitudes. La
+  API puede crear y leer solicitudes y mensajes, pero no editar ni borrar mensajes, ni cambiar a qué reserva
+  pertenece una solicitud. Los mensajes se muestran como texto, nunca como HTML.
 - **Recepción:** el ingreso, la salida y los cambios bloquean la fila de la reserva (y la de la habitación en
   el ingreso y la salida), así que dos personas no pueden alojar a dos huéspedes en la misma habitación al mismo
   tiempo. Los cambios pasan por la misma regla `sin_traslape` que impide la sobreventa.
@@ -829,7 +885,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 126 pruebas automáticas. Cubren:
+`api/tests` contiene 145 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -857,6 +913,10 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 - Tablero de habitaciones: permisos, cada situación (incluido el día de cambio de huésped, la salida atrasada,
   la reserva sin pagar y la habitación fuera de servicio con una llegada), indicadores, cambios tras el ingreso y
   la salida, y un número fijo de consultas aunque crezcan las reservas.
+- Solicitudes de huéspedes: una sola solicitud abierta por reserva, reserva por cuenta o por correo, código
+  ajeno igual a inexistente, escritura solo durante la estadía, límite por minuto, mensajes inválidos, cada área
+  ve lo suyo, conversación completa, tomar, reasignar y reabrir, consultas incrementales, número fijo de
+  sentencias, simulador, cierre al registrar la salida, permisos de la base y retención.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 

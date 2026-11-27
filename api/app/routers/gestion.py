@@ -37,7 +37,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from psycopg import errors as pg_errores
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -47,7 +47,7 @@ from ..dependencias import registrar, requiere_rol
 from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, HabitacionEnTablero,
                         ReservaEnTablero, ReservaSalida, ResumenTablero, Tablero, VistaRecepcion)
 from ..facturacion import impuesto_de
-from ..modelos import Habitacion, Pago, RegistroBitacora, Reserva, Usuario
+from ..modelos import Habitacion, Pago, RegistroBitacora, Reserva, Solicitud, Usuario
 from .reservas import (ESTADOS_CANCELABLES, MAX_NOCHES, buscar_reserva, calcular_total,
                        habitaciones_libres, hoy, salida_reserva)
 
@@ -365,6 +365,8 @@ def check_out(codigo: str, tareas: BackgroundTasks, sesion: Session = Depends(ob
               usuario: Usuario = Depends(RECEPCION)):
     """Registra la salida: la reserva pasa a finalizada y la habitación queda sucia para limpieza.
 
+    Las solicitudes del huésped que seguían abiertas se resuelven en la misma transacción.
+
     Si el huésped se va antes de lo previsto, la salida se adelanta a hoy (o
     al día siguiente de la entrada, si llegó hoy) y las noches restantes
     quedan libres para otros huéspedes. El monto no cambia. Al final se le
@@ -382,6 +384,11 @@ def check_out(codigo: str, tareas: BackgroundTasks, sesion: Session = Depends(ob
 
     habitacion = bloquear_habitacion(sesion, reserva.habitacion_id)
     habitacion.estado_limpieza = "sucia"
+    # Las solicitudes que el huésped dejó abiertas se cierran con su salida
+    sesion.execute(update(Solicitud)
+                   .where(Solicitud.reserva_id == reserva.id, Solicitud.estado != "resuelta")
+                   .values(estado="resuelta", resuelta_en=func.now(), pendiente_desde=None,
+                           actualizada_en=func.now()))
     reserva.estado = "finalizada"
     reserva.actualizada_en = func.now()
     registrar(sesion, usuario, "check_out", "reserva", reserva.codigo, habitacion=habitacion.numero, **extra)

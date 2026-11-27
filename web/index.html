@@ -21,6 +21,8 @@
   <script src="/gestion.js" defer></script>
   <!-- Tablero de habitaciones; usa app.js y abre la gestión de gestion.js -->
   <script src="/tablero.js" defer></script>
+  <!-- Chat de solicitudes: bandeja del personal y chat del huésped -->
+  <script src="/solicitudes.js" defer></script>
 </head>
 <body data-modo="sitio">
   <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
@@ -197,6 +199,7 @@
     <!-- ============================================================ reservar -->
     <!-- Herramientas de trabajo. Cada tarjeta sec-* se muestra según el rol (VISTAS en app.js):
          tablero       recepción y gerencia (situación de cada habitación hoy, en tablero.js)
+         solicitudes   todo el personal, cada área lo suyo (chat con huéspedes, en solicitudes.js)
          recepcion     recepción y gerencia (llegadas, salidas y gestión de reservas, en gestion.js)
          buscar        público, clientes, recepción y gerencia
          reservas      clientes (las suyas), recepción y gerencia
@@ -223,6 +226,57 @@
         <dl id="resumen-tablero" class="indicadores"></dl>
         <ul id="leyenda-tablero" class="leyenda" aria-label="Filtrar por situación"></ul>
         <div id="pisos-tablero"></div>
+      </section>
+
+      <!-- Solicitudes de huéspedes: bandeja del área y conversación elegida. Se actualiza sola,
+           solo con la pestaña visible: cada 10 s con una conversación abierta y cada 30 s con solo
+           la bandeja, y pide únicamente lo nuevo. -->
+      <section id="sec-solicitudes" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Solicitudes de huéspedes <span id="pendientes-solicitudes" class="contador" hidden></span></h2>
+          <div class="botones-fila centrados">
+            <span id="actualizado-solicitudes" class="nota sin-margen" aria-live="polite"></span>
+            <button id="btn-simular-solicitud" class="boton claro" type="button" hidden>Simular un pedido</button>
+          </div>
+        </div>
+        <div class="chat-personal">
+          <div class="columna-bandeja">
+            <div class="vistas" role="group" aria-label="Solicitudes que se muestran">
+              <button type="button" data-filtro-solicitudes="activas" aria-pressed="true">Activas</button>
+              <button type="button" data-filtro-solicitudes="resueltas" aria-pressed="false">Resueltas hoy</button>
+            </div>
+            <ul id="bandeja-solicitudes" class="bandeja" aria-label="Bandeja de solicitudes"></ul>
+          </div>
+          <div class="conversacion">
+            <p id="conversacion-vacia" class="vacio">Elija una solicitud para ver la conversación.</p>
+            <div id="conversacion-activa" class="conversacion-activa" hidden>
+              <header class="conversacion-encabezado">
+                <div>
+                  <strong id="conv-titulo"></strong>
+                  <small id="conv-detalle"></small>
+                </div>
+                <div class="botones-fila centrados">
+                  <label class="en-linea">Área
+                    <select id="conv-area">
+                      <option value="recepcion">Recepción</option>
+                      <option value="limpieza">Limpieza</option>
+                      <option value="mantenimiento">Mantenimiento</option>
+                    </select></label>
+                  <button id="conv-tomar" class="boton claro pequeno" type="button">Tomar</button>
+                  <button id="conv-resolver" class="boton pequeno" type="button">Marcar resuelta</button>
+                  <button id="conv-reabrir" class="boton claro pequeno" type="button">Reabrir</button>
+                </div>
+              </header>
+              <ol id="conv-mensajes" class="mensajes" aria-label="Mensajes"></ol>
+              <form id="form-respuesta" class="redactar">
+                <label class="sr" for="respuesta-texto">Respuesta al huésped</label>
+                <textarea id="respuesta-texto" name="texto" rows="2" maxlength="1000" required
+                  placeholder="Escriba la respuesta al huésped"></textarea>
+                <button class="boton" type="submit">Enviar</button>
+              </form>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Recepción: llegadas, salidas y huéspedes en casa, con búsqueda. "Gestionar" abre
@@ -263,7 +317,11 @@
       <section id="sec-reservas" class="tarjeta" hidden>
         <div class="encabezado">
           <h2 id="titulo-reservas">Reservas</h2>
-          <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
+          <div class="botones-fila">
+            <!-- Solo para clientes: chat con el hotel durante la estadía (pide el código de la reserva) -->
+            <button id="btn-contactar" class="boton claro" type="button" hidden>Contactar al hotel</button>
+            <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
+          </div>
         </div>
         <!-- Tabla con botones Pagar, Factura y Cancelar según el estado de cada reserva -->
         <div id="lista-reservas"></div>
@@ -492,6 +550,43 @@
       <ol id="gestion-historial" class="historial"></ol>
       <div class="acciones">
         <button class="boton" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Chat del huésped con el hotel (solicitudes.js). Desde "Mis reservas" llega con el código;
+       desde "Contactar al hotel", primero lo pide. Solo se escribe durante la estadía. -->
+  <dialog id="dlg-chat" class="ancho" aria-labelledby="chat-titulo">
+    <div class="gestion">
+      <div class="encabezado">
+        <h2 id="chat-titulo">Contactar al hotel</h2>
+        <span id="chat-habitacion" class="nota sin-margen"></span>
+      </div>
+      <p class="nota sin-margen">Escriba lo que necesite durante su estadía: el personal le responde aquí mismo.</p>
+      <form id="form-chat-codigo" class="fila">
+        <label class="crece">Código de su reservación
+          <input name="codigo" required maxlength="20" autocomplete="off" placeholder="SOL-XXXXXX" class="codigo"
+            pattern="\s*[Ss][Oo][Ll]-[A-Za-z0-9]{6}\s*"></label>
+        <button class="boton" type="submit">Abrir</button>
+      </form>
+      <ol id="chat-mensajes" class="mensajes" aria-label="Mensajes"></ol>
+      <p id="error-chat" class="aviso error" role="alert" hidden></p>
+      <p id="chat-cerrado" class="nota" hidden>El chat está disponible durante su estadía: desde que registra su
+        ingreso hasta su salida.</p>
+      <form id="form-chat" class="redactar" hidden>
+        <label id="chat-tema" class="en-linea">Tema
+          <select name="categoria">
+            <option value="recepcion">Recepción y otros</option>
+            <option value="limpieza">Limpieza y amenidades</option>
+            <option value="mantenimiento">Algo no funciona</option>
+          </select></label>
+        <label class="sr" for="chat-texto">Mensaje</label>
+        <textarea id="chat-texto" name="texto" rows="2" maxlength="1000" required
+          placeholder="Por ejemplo: ¿nos pueden traer dos toallas más?"></textarea>
+        <button class="boton" type="submit">Enviar</button>
+      </form>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cerrar</button>
       </div>
     </div>
   </dialog>

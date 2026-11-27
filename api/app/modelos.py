@@ -200,3 +200,37 @@ class Suscriptor(Base):
     origen: Mapped[str] = mapped_column(default="sitio_web")
     activo: Mapped[bool] = mapped_column(default=True)   # False si pidió no recibir más correos
     creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Solicitud(Base):
+    """Solicitud de un huésped durante su estadía: una conversación con un área del hotel.
+
+    Hay como máximo una abierta por reserva (índice único parcial en la
+    base): mientras siga abierta, los mensajes nuevos del huésped van a ella.
+    Sin relaciones cargadas por defecto: las consultas del chat unen solo
+    las columnas que necesitan, para que cada actualización cueste poco.
+    """
+    __tablename__ = "solicitudes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reserva_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"))
+    categoria: Mapped[str] = mapped_column(default="recepcion")    # recepcion, limpieza o mantenimiento
+    estado: Mapped[str] = mapped_column(default="abierta")         # abierta, en_atencion o resuelta
+    asignada_a: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    simulada: Mapped[bool] = mapped_column(default=False)
+    creada_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    actualizada_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    pendiente_desde: Mapped[datetime | None]                       # el huésped espera respuesta desde aquí
+    resuelta_en: Mapped[datetime | None]
+
+
+class Mensaje(Base):
+    """Un mensaje de una solicitud, del huésped o del personal. No se edita ni se borra desde la API."""
+    __tablename__ = "mensajes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    solicitud_id: Mapped[int] = mapped_column(ForeignKey("solicitudes.id"))
+    autor: Mapped[str]                                             # huesped o personal
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))   # nulo: huésped simulado
+    texto: Mapped[str]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())

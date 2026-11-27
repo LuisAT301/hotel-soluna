@@ -352,3 +352,91 @@ class Tablero(BaseModel):
     fecha: date
     resumen: ResumenTablero
     habitaciones: list[HabitacionEnTablero]
+
+
+# ---------------------------------------------------------------------
+# Solicitudes de huéspedes: chat con el personal (etapa 3)
+# ---------------------------------------------------------------------
+CategoriaSolicitud = Literal["recepcion", "limpieza", "mantenimiento"]
+EstadoSolicitud = Literal["abierta", "en_atencion", "resuelta"]
+
+
+class NuevoMensaje(BaseModel):
+    """Texto de un mensaje del chat: se recortan los espacios y no puede quedar vacío."""
+    texto: str = Field(max_length=1000)
+
+    @field_validator("texto")
+    @classmethod
+    def sin_espacios_sobrantes(cls, valor: str) -> str:
+        """Quita espacios al inicio y al final; un mensaje vacío se rechaza con 422."""
+        valor = valor.strip()
+        if not valor:
+            raise ValueError("Escriba un mensaje")
+        return valor
+
+
+class NuevoMensajeHuesped(NuevoMensaje):
+    """Mensaje del huésped. El área solo cuenta si abre una solicitud nueva."""
+    categoria: CategoriaSolicitud = "recepcion"
+
+
+class CambioSolicitud(BaseModel):
+    """Cambios del personal sobre una solicitud: tomarla, reasignarla a otra área o cambiar su estado."""
+    estado: EstadoSolicitud | None = None
+    categoria: CategoriaSolicitud | None = None
+    tomar: bool = False
+
+
+class MensajeSalida(BaseModel):
+    """Un mensaje del chat. ``nombre`` es quién respondió del personal (nulo para el huésped)."""
+    id: int
+    solicitud_id: int
+    autor: Literal["huesped", "personal"]
+    nombre: str | None
+    texto: str
+    creado_en: datetime
+
+
+class SolicitudSalida(BaseModel):
+    """Una solicitud en la bandeja del personal, con la habitación, el huésped y el último mensaje."""
+    id: int
+    codigo_reserva: str
+    habitacion: str
+    nombre_huesped: str
+    categoria: CategoriaSolicitud
+    estado: EstadoSolicitud
+    asignada_a: str | None
+    simulada: bool
+    creada_en: datetime
+    actualizada_en: datetime
+    pendiente_desde: datetime | None
+    resuelta_en: datetime | None
+    ultimo_mensaje: str | None
+
+
+class BandejaSolicitudes(BaseModel):
+    """Respuesta de la bandeja del personal.
+
+    ``ahora`` es el punto de partida de la siguiente consulta incremental:
+    la pantalla lo devuelve como ``desde`` y recibe solo lo que cambió.
+    ``mensajes`` trae los mensajes nuevos de la conversación abierta.
+    """
+    ahora: datetime
+    solicitudes: list[SolicitudSalida]
+    mensajes: list[MensajeSalida]
+
+
+class SolicitudBreve(BaseModel):
+    """La solicitud abierta del huésped, si tiene una."""
+    id: int
+    categoria: CategoriaSolicitud
+    estado: EstadoSolicitud
+
+
+class ChatHuesped(BaseModel):
+    """El chat de una estadía tal como lo ve el huésped."""
+    codigo: str
+    habitacion: str
+    puede_escribir: bool          # solo durante la estadía (reserva en curso)
+    abierta: SolicitudBreve | None
+    mensajes: list[MensajeSalida]

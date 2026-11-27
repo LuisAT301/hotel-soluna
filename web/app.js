@@ -30,10 +30,11 @@ const PERSONAL = ['recepcionista', 'limpieza', 'mantenimiento', 'gerente'];
 const VISTAS = {
   publico: ['buscar'],
   cliente: ['buscar', 'reservas'],
-  recepcionista: ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones'],
-  limpieza: ['habitaciones'],
-  mantenimiento: ['habitaciones'],
-  gerente: ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
+  recepcionista: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones'],
+  limpieza: ['solicitudes', 'habitaciones'],
+  mantenimiento: ['solicitudes', 'habitaciones'],
+  gerente: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora',
+    'suscriptores'],
 };
 
 // Formato de dinero en dólares con convenciones de Costa Rica, y atajo para buscar elementos
@@ -175,15 +176,18 @@ async function intentar(accion) {
 function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
   document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
-  for (const nombre of ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
+  for (const nombre of ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios',
+    'bitacora', 'suscriptores']) {
     $(`#sec-${nombre}`).hidden = !vista.includes(nombre);
   }
   $('#btn-entrar').hidden = Boolean(sesion.token);
   $('#btn-salir').hidden = !sesion.token;
   $('#usuario-actual').textContent = sesion.token ? `${sesion.nombre} · ${ROLES[sesion.rol]}` : '';
   $('#titulo-reservas').textContent = sesion.rol === 'cliente' ? 'Mis reservas' : 'Reservas';
+  $('#btn-contactar').hidden = sesion.rol !== 'cliente';
 
   if (vista.includes('tablero')) intentar(cargarTablero);       // definida en tablero.js
+  if (vista.includes('solicitudes')) intentar(iniciarSolicitudes);   // definida en solicitudes.js
   if (vista.includes('recepcion')) intentar(cargarRecepcion);   // definida en gestion.js
   if (vista.includes('reservas')) intentar(cargarReservas);
   if (vista.includes('habitaciones')) intentar(cargarHabitaciones);
@@ -291,6 +295,10 @@ async function cargarReservas() {
     }
     if (cancelable(r)) {
       botones.push(el('button', { clase: 'boton peligro pequeno', type: 'button', onclick: () => intentar(() => cancelar(r)) }, 'Cancelar'));
+    }
+    // Durante la estadía, el huésped puede escribir al hotel (solicitudes.js)
+    if (sesion.rol === 'cliente' && r.estado === 'en_curso') {
+      botones.push(el('button', { clase: 'boton pequeno', type: 'button', onclick: () => abrirChat(r.codigo) }, 'Contactar al hotel'));
     }
     if (sesion.rol === 'cliente' && estadiaCumplida(r)) {
       botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => abrirResena(r.codigo) }, 'Opinar'));

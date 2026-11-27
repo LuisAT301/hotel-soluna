@@ -503,10 +503,86 @@ dialog.ancho { width: min(720px, 94vw); }
 #pisos-tablero[data-filtro="fuera_de_servicio"] .hab.sit-fuera_de_servicio { opacity: 1; }
 
 /* =====================================================================
+   Solicitudes de huéspedes (solicitudes.js): bandeja, conversación y chat
+   ===================================================================== */
+.contador {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--coral);
+  color: var(--blanco);
+  font: 600 .8rem var(--f-texto);
+  vertical-align: middle;
+}
+label.en-linea { flex-direction: row; align-items: center; gap: 6px; }
+label.en-linea select { min-width: 0; padding: 5px 8px; }
+
+.chat-personal { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 14px; align-items: start; }
+.columna-bandeja .vistas { margin-bottom: 8px; }
+.bandeja { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 520px; overflow-y: auto; }
+.bandeja .vacio { padding: 8px 0; }
+
+/* Cada área con su color en el borde izquierdo */
+.area-recepcion { --area: var(--oceano); }
+.area-limpieza { --area: var(--laguna); }
+.area-mantenimiento { --area: var(--sol-oscuro); }
+.estado.area.recepcion { background: #E6EEF5; color: var(--oceano); }
+.estado.area.limpieza { background: var(--laguna-claro); color: #145C58; }
+.estado.area.mantenimiento { background: #FCEBD7; color: #8A4B12; }
+.estado.en_atencion { background: #E6EEF5; color: var(--oceano); }
+.estado.abierta { background: #FCEBD7; color: #8A4B12; }
+.estado.resuelta { background: #ECE8E0; color: var(--gris); }
+.estado.simulada { background: #EEE7F6; color: #5B3F86; }
+
+.bandeja button.solicitud {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--area);
+  border-radius: 8px;
+  background: var(--blanco);
+  color: var(--texto);
+}
+.bandeja button.solicitud:hover { background: #FBF8F2; }
+.bandeja button.solicitud[aria-current="true"] { background: #F3F7FA; box-shadow: inset 0 0 0 1px var(--area); }
+.solicitud .linea { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .88rem; }
+.solicitud .vista-previa { font-size: .82rem; color: var(--gris); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.espera { font-size: .78rem; font-weight: 600; color: #8E3524; }
+
+.conversacion { border: 1px solid var(--borde); border-radius: var(--radio); padding: 12px 14px; min-height: 320px; }
+.conversacion > .vacio { margin: 0; }
+.conversacion-activa { display: flex; flex-direction: column; gap: 10px; }
+.conversacion-encabezado { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; border-bottom: 1px solid var(--borde); padding-bottom: 8px; }
+.conversacion-encabezado strong { display: block; color: var(--oceano); }
+.conversacion-encabezado small { color: var(--gris); }
+
+/* Globos: lo propio a la derecha y lo del otro a la izquierda */
+.mensajes { list-style: none; margin: 0; padding: 4px 2px; display: flex; flex-direction: column; gap: 8px; max-height: 360px; min-height: 160px; overflow-y: auto; }
+.mensajes li { max-width: 80%; padding: 7px 11px; border-radius: 12px; display: flex; flex-direction: column; gap: 2px; font-size: .92rem; }
+.mensajes li.ajeno { align-self: flex-start; background: #F1EDE4; border-bottom-left-radius: 4px; }
+.mensajes li.propio { align-self: flex-end; background: var(--laguna-claro); border-bottom-right-radius: 4px; }
+.mensajes li.separador { align-self: center; max-width: none; padding: 2px 8px; font-size: .78rem; color: var(--gris); background: none; }
+.mensajes .meta { font-size: .72rem; color: var(--gris); }
+.mensajes .texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.redactar { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; align-items: flex-end; }   /* también dentro de un diálogo */
+.redactar textarea { flex: 1 1 240px; min-height: 44px; }
+.redactar textarea:disabled { background: #F4F1EB; }
+
+/* =====================================================================
    Pantallas angostas
    ===================================================================== */
 /* Tabletas: el menú se convierte en un panel desplegable que abre el botón ☰ */
 @media (max-width: 920px) {
+  .chat-personal { grid-template-columns: 1fr; }
+  .bandeja { max-height: 260px; }
   .btn-menu { display: block; }
   .menu {
     display: none;
@@ -544,6 +620,8 @@ dialog.ancho { width: min(720px, 94vw); }
   .fila.compacta { flex-wrap: wrap; }
   .cuadricula { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
   #sec-tablero .encabezado { flex-wrap: wrap; }
+  #sec-solicitudes .encabezado { flex-wrap: wrap; }
+  .mensajes li { max-width: 92%; }
   #sec-tablero .encabezado .botones-fila { width: 100%; justify-content: space-between; }
   .indicadores { grid-template-columns: repeat(2, 1fr); }
 }
