@@ -45,9 +45,11 @@ def _admin():
 def base_limpia():
     """Cada prueba empieza con el catálogo intacto, sin reservas y con las cuentas demo."""
     with _admin() as c:
-        c.execute("TRUNCATE bitacora, resenas, pagos, facturas, reservas, usuarios, suscriptores "
+        c.execute("TRUNCATE bitacora, mensajes, solicitudes, cargos, pagos_caja, resenas, pagos, facturas, reservas, usuarios, suscriptores "
                   "RESTART IDENTITY CASCADE")
         c.execute("UPDATE habitaciones SET estado_limpieza = 'limpia', fuera_de_servicio = false")
+        # El catálogo de servicios se conserva; solo se quitan los que crean las pruebas
+        c.execute("DELETE FROM servicios WHERE nombre LIKE 'Prueba %'")
         c.execute("ALTER SEQUENCE consecutivo_factura RESTART")
     from app import seed
     seed.main()

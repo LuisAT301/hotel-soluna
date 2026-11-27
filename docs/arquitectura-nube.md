@@ -86,6 +86,12 @@ El número de la tarjeta viaja del navegador a la pasarela y nunca llega a la AP
 Esta separación reduce el alcance de los controles exigidos para datos de tarjetas, porque el sistema del
 hotel solo maneja un token sin valor fuera de la pasarela (PCI Security Standards Council, 2022).
 
+Lo que se cobra en el hotel sigue otro camino. Durante la estadía, recepción carga los consumos a la cuenta de la
+habitación; al registrar la salida, la API cobra el saldo con el método elegido y emite una segunda factura
+electrónica, la de la cuenta final, con una línea por concepto. Las líneas quedan guardadas con la factura, de
+modo que, si Hacienda no responde, se reenvían idénticas más tarde. Cargos, pagos y facturas no se borran ni se
+editan: un error se corrige con una anulación que deja rastro.
+
 ## 5. Decisiones de diseño
 
 **Funciones sin estado.** En Vercel cada solicitud puede atenderla una instancia distinta, y las instancias
@@ -194,19 +200,32 @@ Supabase pasa la base a solo lectura cuando supera los 500 MB (Supabase, s. f.),
 y los pagos. Las lecturas no ocupan espacio; lo que crece son los registros. Por eso la función
 `hotel.mantenimiento()` aplica una política de retención: la bitácora se conserva 365 días, el mínimo de 12
 meses de PCI DSS 4.0 (PCI Security Standards Council, 2022, requisito 10.5.1); el historial de `pg_cron`,
-que no se depura solo, 7 días; y las llaves de idempotencia del simulador, 7 días. `pg_cron` la ejecuta cada
+que no se depura solo, 7 días; las llaves de idempotencia del simulador, 7 días; y las conversaciones
+resueltas con huéspedes, 90 días, porque contienen datos personales y solo se justifican mientras pueda haber
+un reclamo sobre la estadía, en línea con la Ley N.º 8968 (Asamblea Legislativa de la República de Costa
+Rica, 2011). `pg_cron` la ejecuta cada
 día y, además, cada hora mide la base: si llega al 70 % del límite, recorta la bitácora a 90 días, los tres
 meses que la misma norma exige mantener disponibles de inmediato. Cada limpieza diaria deja constancia en la
 bitácora con el tamaño medido. Al activarla, la base ocupaba 12 MB.
+
+`pg_cron` también ejecuta una regla de negocio: cada hora, en el minuto 5, la función
+`hotel.liberar_no_presentados()` cancela las reservas que se pagan al llegar cuya garantía (las 5:00 p. m. del
+día de entrada) venció sin que el huésped se presentara ni pagara un adelanto. La regla vive en la base y no en
+la API porque las funciones de Vercel solo se ejecutan cuando llega una petición: sin la tarea programada, una
+habitación quedaría bloqueada hasta que alguien abriera el panel. El botón de recepción llama a la misma
+función, de modo que el proceso automático y el manual no pueden divergir.
 
 La carga de consultas se acota de otra forma: la API y el simulador tienen un límite de 15 s por consulta y de
 60 s para una transacción inactiva, en lugar de los minutos que permite PostgreSQL por omisión. Así, una
 consulta defectuosa no puede acaparar la capacidad compartida del plan gratuito.
 
-El tablero de habitaciones del panel del personal, la única pantalla que se actualiza sola, se diseñó con el
-mismo criterio. Cada actualización cuesta tres consultas, sin importar cuántas reservas haya, y se pide una vez
-por minuto solo mientras la pestaña está visible. Una pantalla abierta durante un turno de 8 horas hace unas
-1440 consultas pequeñas, y ninguna si queda en segundo plano.
+Las pantallas que se actualizan solas se diseñaron con el mismo criterio: preguntan solo mientras están
+visibles y cada consulta cuesta un número fijo de sentencias, sin importar cuántos datos haya. El tablero de
+habitaciones pide tres sentencias una vez por minuto; una pantalla abierta durante un turno de 8 horas hace unas
+1440 consultas pequeñas, y ninguna si queda en segundo plano. El chat de solicitudes, que necesita respuestas
+más rápidas, pide solo lo nuevo: las solicitudes cambiadas desde la consulta anterior (cada 30 s, dos
+sentencias) y, con una conversación abierta, los mensajes posteriores al último que ya muestra (cada 10 s,
+cuatro sentencias como máximo). Una consulta sin novedades devuelve una lista vacía.
 
 ## 9. Verificación
 
@@ -216,7 +235,7 @@ factura aceptada, pago repetido, cancelación con reembolso, protección del pan
 servicios, el registro en Hacienda y el aviso firmado de la OTA. Cancela al final las reservas que crea.
 
 En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con una mediana de 227 ms y un
-máximo de 605 ms por paso. Las 126 pruebas automáticas de `api/tests` cubren, además, los casos que no
+máximo de 605 ms por paso. Las 190 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
 ### 9.1. Prueba de carga
@@ -237,6 +256,9 @@ comparten la máquina, así que la latencia de red es casi nula. En Vercel, cada
 y Nginx las reparte; en Vercel, la plataforma decide cuántas instancias ejecutar según la demanda.
 
 ## Referencias
+
+Asamblea Legislativa de la República de Costa Rica. (2011). *Ley de protección de la persona frente al
+tratamiento de sus datos personales* (Ley N.º 8968).
 
 Eastlake, D., 3rd, & Panitz, A. (1999). *Reserved top level DNS names* (RFC 2606). Internet Engineering
 Task Force. https://doi.org/10.17487/RFC2606

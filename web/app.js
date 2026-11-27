@@ -30,10 +30,11 @@ const PERSONAL = ['recepcionista', 'limpieza', 'mantenimiento', 'gerente'];
 const VISTAS = {
   publico: ['buscar'],
   cliente: ['buscar', 'reservas'],
-  recepcionista: ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones'],
-  limpieza: ['habitaciones'],
-  mantenimiento: ['habitaciones'],
-  gerente: ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores'],
+  recepcionista: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones'],
+  limpieza: ['solicitudes', 'habitaciones'],
+  mantenimiento: ['solicitudes', 'habitaciones'],
+  gerente: ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'servicios',
+    'bitacora', 'suscriptores'],
 };
 
 // Formato de dinero en dólares con convenciones de Costa Rica, y atajo para buscar elementos
@@ -175,19 +176,23 @@ async function intentar(accion) {
 function mostrarVista() {
   const vista = VISTAS[sesion.rol] || VISTAS.publico;
   document.body.dataset.modo = PERSONAL.includes(sesion.rol) ? 'panel' : 'sitio';
-  for (const nombre of ['tablero', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios', 'bitacora', 'suscriptores']) {
+  for (const nombre of ['tablero', 'solicitudes', 'recepcion', 'buscar', 'reservas', 'habitaciones', 'usuarios',
+    'servicios', 'bitacora', 'suscriptores']) {
     $(`#sec-${nombre}`).hidden = !vista.includes(nombre);
   }
   $('#btn-entrar').hidden = Boolean(sesion.token);
   $('#btn-salir').hidden = !sesion.token;
   $('#usuario-actual').textContent = sesion.token ? `${sesion.nombre} · ${ROLES[sesion.rol]}` : '';
   $('#titulo-reservas').textContent = sesion.rol === 'cliente' ? 'Mis reservas' : 'Reservas';
+  $('#btn-contactar').hidden = sesion.rol !== 'cliente';
 
   if (vista.includes('tablero')) intentar(cargarTablero);       // definida en tablero.js
+  if (vista.includes('solicitudes')) intentar(iniciarSolicitudes);   // definida en solicitudes.js
   if (vista.includes('recepcion')) intentar(cargarRecepcion);   // definida en gestion.js
   if (vista.includes('reservas')) intentar(cargarReservas);
   if (vista.includes('habitaciones')) intentar(cargarHabitaciones);
   if (vista.includes('usuarios')) intentar(cargarUsuarios);
+  if (vista.includes('servicios')) intentar(cargarCatalogoGerencia);   // definida en cuenta.js
   if (vista.includes('bitacora')) intentar(cargarBitacora);
   if (vista.includes('suscriptores')) intentar(cargarSuscriptores);
   if (vista.includes('buscar') && ultimaBusqueda) intentar(() => buscar(ultimaBusqueda));
@@ -235,8 +240,9 @@ async function buscar(parametros) {
 
 /**
  * Empieza una reserva desde el botón "Reservar".
- * Sin sesión pide iniciarla; un cliente reserva de inmediato a su nombre; el personal
- * primero completa el nombre y el correo del huésped en un diálogo.
+ * Sin sesión pide iniciarla; un cliente reserva de inmediato a su nombre; el personal abre el
+ * formulario de nueva reserva (gestion.js) con las fechas y el tipo ya elegidos, para completar
+ * los datos del huésped, su teléfono y si llegó por teléfono o al mostrador.
  */
 function iniciarReserva(grupo, parametros) {
   const datos = {
@@ -253,16 +259,9 @@ function iniciarReserva(grupo, parametros) {
     intentar(() => confirmarReserva(datos));
     return;
   }
-  // Personal del hotel: pide los datos del huésped
-  reservaPendiente = datos;
-  $('#resumen-huesped').textContent =
-    `Habitación ${grupo.tipo} del ${fechaCorta(datos.fecha_entrada)} al ${fechaCorta(datos.fecha_salida)}.`;
-  $('#form-huesped').reset();
-  $('#dlg-huesped').showModal();
+  // Personal del hotel: el mismo formulario de "Nueva reserva" de Recepción
+  abrirNuevaReserva({ entrada: parametros.entrada, salida: parametros.salida, personas: parametros.personas, tipo: grupo.tipo });
 }
-
-// Datos de la reserva que el personal está completando en el diálogo del huésped
-let reservaPendiente = null;
 
 /** Crea la reserva, actualiza la búsqueda y la lista, y abre el pago si quedó pendiente. */
 async function confirmarReserva(datos) {
@@ -291,6 +290,14 @@ async function cargarReservas() {
     }
     if (cancelable(r)) {
       botones.push(el('button', { clase: 'boton peligro pequeno', type: 'button', onclick: () => intentar(() => cancelar(r)) }, 'Cancelar'));
+    }
+    // Durante la estadía, el huésped puede escribir al hotel (solicitudes.js)
+    if (sesion.rol === 'cliente' && r.estado === 'en_curso') {
+      botones.push(el('button', { clase: 'boton pequeno', type: 'button', onclick: () => abrirChat(r.codigo) }, 'Contactar al hotel'));
+    }
+    // Consumos cargados a la habitación y lo que queda por pagar al salir (cuenta.js)
+    if (sesion.rol === 'cliente' && ['en_curso', 'finalizada'].includes(r.estado)) {
+      botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => abrirMiCuenta(r.codigo) }, 'Mi cuenta'));
     }
     if (sesion.rol === 'cliente' && estadiaCumplida(r)) {
       botones.push(el('button', { clase: 'boton claro pequeno', type: 'button', onclick: () => abrirResena(r.codigo) }, 'Opinar'));
@@ -747,13 +754,6 @@ document.addEventListener('DOMContentLoaded', () => {
         $('#nota-entrar').hidden = false;
       })
       .finally(() => { boton.disabled = false; });
-  });
-
-  $('#form-huesped').addEventListener('submit', (evento) => {
-    evento.preventDefault();
-    const huesped = Object.fromEntries(new FormData(evento.target));
-    $('#dlg-huesped').close();
-    intentar(() => confirmarReserva({ ...reservaPendiente, ...huesped }));
   });
 
   $('#form-pago').addEventListener('submit', (evento) => {

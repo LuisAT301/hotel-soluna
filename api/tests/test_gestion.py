@@ -30,11 +30,12 @@ def reserva_bd(admin_db, codigo, entrada, salida, estado="confirmada", habitacio
     if total is None:
         tipo = admin_db.execute("SELECT tipo_id FROM habitaciones WHERE id = %s", (habitacion_id,)).fetchone()[0]
         total = precio(tipo, entrada, salida)
+    # Como en la realidad, la reserva se tomó antes del día de llegada (a más tardar el día anterior)
     admin_db.execute(
         "INSERT INTO reservas (codigo, habitacion_id, nombre_huesped, correo_huesped, personas, "
-        "fecha_entrada, fecha_salida, canal, estado, total) VALUES (%s, %s, %s, %s, 2, %s, %s, "
-        "'recepcion', %s, %s)",
-        (codigo, habitacion_id, nombre, correo, entrada, salida, estado, total))
+        "fecha_entrada, fecha_salida, canal, estado, total, creada_en) VALUES (%s, %s, %s, %s, 2, %s, %s, "
+        "'recepcion', %s, %s, LEAST(now(), %s::date - interval '12 hours'))",
+        (codigo, habitacion_id, nombre, correo, entrada, salida, estado, total, entrada))
     return codigo
 
 
@@ -141,7 +142,10 @@ def test_ciclo_de_un_dia_en_recepcion(cliente_http, admin_db, recepcion, correos
     r = cliente_http.post(entrar, headers=recepcion)
     assert r.status_code == 409 and "SOL-ANTER1" in r.json()["detail"]
 
+    # El hospedaje se paga en el hotel: sin método de pago la salida se rechaza; con él, se cobra
     r = cliente_http.post("/api/gestion/reservas/SOL-ANTER1/check-out", headers=recepcion)
+    assert r.status_code == 409 and "saldo pendiente" in r.json()["detail"]
+    r = cliente_http.post("/api/gestion/reservas/SOL-ANTER1/check-out", headers=recepcion, json={"metodo_pago": "efectivo"})
     assert r.status_code == 200 and r.json()["estado"] == "finalizada", r.text
     assert estado_bd(admin_db, "SOL-ANTER1")[2] == dia          # salió el día previsto: fecha intacta
     assert admin_db.execute("SELECT estado_limpieza FROM habitaciones WHERE id = 1").fetchone()[0] == "sucia"
@@ -208,7 +212,7 @@ def test_salida_anticipada_libera_las_noches(cliente_http, admin_db, recepcion):
         "/api/disponibilidad", params={"entrada": str(dia), "salida": str(dia + timedelta(days=4))}).json()}
     assert "101" not in libres()
 
-    r = cliente_http.post("/api/gestion/reservas/SOL-ANTIC1/check-out", headers=recepcion)
+    r = cliente_http.post("/api/gestion/reservas/SOL-ANTIC1/check-out", headers=recepcion, json={"metodo_pago": "efectivo"})
     assert r.status_code == 200, r.text
     assert estado_bd(admin_db, "SOL-ANTIC1") == ("finalizada", dia - timedelta(days=1), dia, "101", total)
     assert "101" in libres()

@@ -7,9 +7,10 @@ de modo que nunca se filtre por accidente una columna interna (por ejemplo,
 el hash de la contraseña). ``from_attributes=True`` permite construir la
 respuesta directamente desde un objeto de la base de datos.
 """
+import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 import email_validator
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -100,6 +101,23 @@ class NuevaReserva(BaseModel):
     # si reserva un cliente con su cuenta, se usan sus propios datos.
     nombre_huesped: str | None = Field(default=None, min_length=2, max_length=120)
     correo_huesped: EmailStr | None = None
+    # Teléfono de contacto: obligatorio en las reservas que llegan por teléfono
+    telefono_huesped: str | None = Field(default=None, max_length=25)
+    # Cómo llegó la reserva al personal: en el mostrador o por teléfono (se ignora si reserva un cliente)
+    canal: Literal["recepcion", "telefono"] | None = None
+
+    @field_validator("telefono_huesped")
+    @classmethod
+    def telefono_valido(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; exige solo números, espacios, guiones, paréntesis y un "+"
+        inicial, con 8 a 15 dígitos (el máximo internacional, E.164). Vacío equivale a no indicarlo."""
+        if valor is None or not valor.strip():
+            return None
+        valor = " ".join(valor.split())
+        digitos = sum(c.isdigit() for c in valor)
+        if not re.fullmatch(r"\+?[0-9 ()-]{8,20}", valor) or not 8 <= digitos <= 15:
+            raise ValueError("Teléfono inválido: use números, espacios, guiones o paréntesis, con 8 a 15 dígitos")
+        return valor
 
 
 class ReservaSalida(BaseModel):
@@ -111,6 +129,7 @@ class ReservaSalida(BaseModel):
     tipo: str
     nombre_huesped: str
     correo_huesped: str
+    telefono_huesped: str | None
     personas: int
     fecha_entrada: date
     fecha_salida: date
@@ -121,6 +140,8 @@ class ReservaSalida(BaseModel):
     total_con_impuesto: Decimal    # lo que se cobra
     tiene_factura: bool
     creada_en: datetime
+    # Hasta cuándo se garantizan la habitación y la tarifa (reservas que se pagan al llegar y aún no ingresan)
+    garantia_hasta: datetime | None = None
 
 
 class SolicitudPago(BaseModel):
@@ -313,6 +334,7 @@ class ReservaEnTablero(BaseModel):
     fecha_entrada: date
     fecha_salida: date
     estado: str
+    garantia_vencida: bool = False   # se paga al llegar, no ha ingresado y ya pasó la hora de garantía
 
 
 class HabitacionEnTablero(BaseModel):
@@ -352,3 +374,260 @@ class Tablero(BaseModel):
     fecha: date
     resumen: ResumenTablero
     habitaciones: list[HabitacionEnTablero]
+
+
+# ---------------------------------------------------------------------
+# Solicitudes de huéspedes: chat con el personal (etapa 3)
+# ---------------------------------------------------------------------
+CategoriaSolicitud = Literal["recepcion", "limpieza", "mantenimiento"]
+EstadoSolicitud = Literal["abierta", "en_atencion", "resuelta"]
+
+
+class NuevoMensaje(BaseModel):
+    """Texto de un mensaje del chat: se recortan los espacios y no puede quedar vacío."""
+    texto: str = Field(max_length=1000)
+
+    @field_validator("texto")
+    @classmethod
+    def sin_espacios_sobrantes(cls, valor: str) -> str:
+        """Quita espacios al inicio y al final; un mensaje vacío se rechaza con 422."""
+        valor = valor.strip()
+        if not valor:
+            raise ValueError("Escriba un mensaje")
+        return valor
+
+
+class NuevoMensajeHuesped(NuevoMensaje):
+    """Mensaje del huésped. El área solo cuenta si abre una solicitud nueva."""
+    categoria: CategoriaSolicitud = "recepcion"
+
+
+class CambioSolicitud(BaseModel):
+    """Cambios del personal sobre una solicitud: tomarla, reasignarla a otra área o cambiar su estado."""
+    estado: EstadoSolicitud | None = None
+    categoria: CategoriaSolicitud | None = None
+    tomar: bool = False
+
+
+class MensajeSalida(BaseModel):
+    """Un mensaje del chat. ``nombre`` es quién respondió del personal (nulo para el huésped)."""
+    id: int
+    solicitud_id: int
+    autor: Literal["huesped", "personal"]
+    nombre: str | None
+    texto: str
+    creado_en: datetime
+
+
+class SolicitudSalida(BaseModel):
+    """Una solicitud en la bandeja del personal, con la habitación, el huésped y el último mensaje."""
+    id: int
+    codigo_reserva: str
+    habitacion: str
+    nombre_huesped: str
+    categoria: CategoriaSolicitud
+    estado: EstadoSolicitud
+    asignada_a: str | None
+    simulada: bool
+    creada_en: datetime
+    actualizada_en: datetime
+    pendiente_desde: datetime | None
+    resuelta_en: datetime | None
+    ultimo_mensaje: str | None
+
+
+class BandejaSolicitudes(BaseModel):
+    """Respuesta de la bandeja del personal.
+
+    ``ahora`` es el punto de partida de la siguiente consulta incremental:
+    la pantalla lo devuelve como ``desde`` y recibe solo lo que cambió.
+    ``mensajes`` trae los mensajes nuevos de la conversación abierta.
+    """
+    ahora: datetime
+    solicitudes: list[SolicitudSalida]
+    mensajes: list[MensajeSalida]
+
+
+class SolicitudBreve(BaseModel):
+    """La solicitud abierta del huésped, si tiene una."""
+    id: int
+    categoria: CategoriaSolicitud
+    estado: EstadoSolicitud
+
+
+class ChatHuesped(BaseModel):
+    """El chat de una estadía tal como lo ve el huésped."""
+    codigo: str
+    habitacion: str
+    puede_escribir: bool          # solo durante la estadía (reserva en curso)
+    abierta: SolicitudBreve | None
+    mensajes: list[MensajeSalida]
+
+
+# ---------------------------------------------------------------------
+# Cuenta de la habitación: consumos, pagos en caja y factura final (etapa 5)
+# ---------------------------------------------------------------------
+CategoriaServicio = Literal["room_service", "restaurante", "bar", "minibar", "spa", "lavanderia", "transporte",
+                            "tours", "otros"]
+MetodoPago = Literal["efectivo", "tarjeta", "sinpe", "transferencia"]
+Dinero = Annotated[Decimal, Field(gt=0, max_digits=10, decimal_places=2)]
+
+
+def _texto_limpio(valor: str | None) -> str | None:
+    """Recorta espacios y une los repetidos; una cadena vacía equivale a no indicarla."""
+    if valor is None:
+        return None
+    valor = " ".join(valor.split())
+    return valor or None
+
+
+class ServicioSalida(BaseModel):
+    """Servicio del catálogo, con su precio sin IVA."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nombre: str
+    categoria: CategoriaServicio
+    precio: Decimal
+    activo: bool
+
+
+class NuevoServicio(BaseModel):
+    """Servicio nuevo que gerencia agrega al catálogo."""
+    nombre: str = Field(min_length=2, max_length=80)
+    categoria: CategoriaServicio
+    precio: Dinero
+
+    @field_validator("nombre")
+    @classmethod
+    def nombre_limpio(cls, valor: str) -> str:
+        """Recorta y une los espacios del nombre."""
+        return _texto_limpio(valor) or valor
+
+
+class CambioServicio(BaseModel):
+    """Cambios de gerencia a un servicio; los campos omitidos no cambian."""
+    nombre: str | None = Field(default=None, min_length=2, max_length=80)
+    categoria: CategoriaServicio | None = None
+    precio: Dinero | None = None
+    activo: bool | None = None
+
+
+class NuevoCargo(BaseModel):
+    """Consumo que se carga a la cuenta: del catálogo (``servicio_id``) o libre (descripción, categoría y precio)."""
+    servicio_id: int | None = None
+    cantidad: int = Field(default=1, ge=1, le=99)
+    descripcion: str | None = Field(default=None, max_length=120)
+    categoria: CategoriaServicio | None = None
+    precio_unitario: Dinero | None = None
+
+    @field_validator("descripcion")
+    @classmethod
+    def descripcion_limpia(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; vacía equivale a no indicarla."""
+        return _texto_limpio(valor)
+
+
+class AnulacionCargo(BaseModel):
+    """Motivo por el que se anula un cargo (queda en la cuenta y en la bitácora)."""
+    motivo: str = Field(min_length=3, max_length=200)
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_limpio(cls, valor: str) -> str:
+        """Recorta y une los espacios; un motivo de solo espacios no cuenta."""
+        valor = _texto_limpio(valor) or ""
+        if len(valor) < 3:
+            raise ValueError("Indique el motivo de la anulación (al menos 3 caracteres)")
+        return valor
+
+
+class NuevoPagoCaja(BaseModel):
+    """Pago recibido en la recepción."""
+    monto: Dinero
+    metodo: MetodoPago
+    referencia: str | None = Field(default=None, max_length=60)   # número de voucher o de comprobante
+
+    @field_validator("referencia")
+    @classmethod
+    def referencia_limpia(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; vacía equivale a no indicarla."""
+        return _texto_limpio(valor)
+
+
+class SalidaHuesped(BaseModel):
+    """Datos opcionales del check-out: con qué se cobra el saldo pendiente, si lo hay."""
+    metodo_pago: MetodoPago | None = None
+    referencia: str | None = Field(default=None, max_length=60)
+
+    @field_validator("referencia")
+    @classmethod
+    def referencia_limpia(cls, valor: str | None) -> str | None:
+        """Recorta y une los espacios; vacía equivale a no indicarla."""
+        return _texto_limpio(valor)
+
+
+class CargoSalida(BaseModel):
+    """Un consumo de la cuenta. ``creado_por`` es nulo cuando la cuenta la ve el huésped."""
+    id: int
+    categoria: CategoriaServicio
+    descripcion: str
+    cantidad: int
+    precio_unitario: Decimal
+    total: Decimal
+    creado_en: datetime
+    creado_por: str | None
+    anulado: bool
+    motivo_anulacion: str | None
+
+
+class PagoCajaSalida(BaseModel):
+    """Un pago recibido en la recepción."""
+    id: int
+    metodo: MetodoPago
+    monto: Decimal
+    referencia: str | None
+    creado_en: datetime
+    recibido_por: str | None
+
+
+class FacturaFinalSalida(BaseModel):
+    """La factura electrónica de la cuenta final, emitida al registrar la salida."""
+    consecutivo: str
+    clave: str
+    estado: str
+    total: Decimal
+    emitida_en: datetime
+
+
+class CuentaSalida(BaseModel):
+    """Estado de cuenta de una reserva: lo que se cobra en el hotel, lo pagado y lo pendiente.
+
+    ``hospedaje_modalidad`` dice cómo se paga la estadía: en línea (ya
+    pagada), por la agencia (OTA), en el hotel (recepción o teléfono) o
+    nada si se canceló. Solo en el último caso el hospedaje suma a la
+    cuenta. ``por_pagar`` es lo que falta cobrar a la salida; ``a_favor``,
+    lo pagado de más si se anuló un cargo ya pagado.
+    """
+    codigo: str
+    estado: str
+    hospedaje_modalidad: Literal["en_linea", "agencia", "en_hotel", "cancelada"]
+    hospedaje: Decimal            # hospedaje que se cobra en el hotel, sin IVA (0 si no aplica)
+    consumos: Decimal             # cargos vigentes, sin IVA
+    subtotal: Decimal
+    impuesto: Decimal             # IVA del 13 % sobre el subtotal
+    total: Decimal
+    pagado: Decimal
+    por_pagar: Decimal
+    a_favor: Decimal
+    puede_cargar: bool            # huésped alojado: se le pueden cargar consumos
+    cargos: list[CargoSalida]
+    pagos: list[PagoCajaSalida]
+    factura_final: FacturaFinalSalida | None
+
+
+class ReservaLiberada(BaseModel):
+    """Reserva cancelada porque el huésped no se presentó antes de la hora de garantía."""
+    codigo: str
+    habitacion: str
+    fecha_entrada: date

@@ -146,11 +146,11 @@ sesión como `cliente@soluna.test` y opinar sobre `SOL-DEMO01`. Cada estadía ad
 | Rol | Secciones |
 |---|---|
 | Público | Página de inicio completa: ubicación, habitaciones, amenidades, reseñas, disponibilidad, suscripción por correo y contacto (para reservar debe iniciar sesión o crear una cuenta) |
-| Cliente | La misma página de inicio, más Mis reservas (paga en línea y consulta su factura) |
-| Recepcionista | Habitaciones hoy (tablero por piso), Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
-| Limpieza | Habitaciones (cambia el estado de limpieza) |
-| Mantenimiento | Habitaciones (solo lectura) |
-| Gerente | Todo lo anterior, más Cuentas del personal, Bitácora y Correos suscritos |
+| Cliente | La misma página de inicio, más Mis reservas (paga en línea, consulta su factura, ve su cuenta de consumos y, durante la estadía, escribe al hotel) |
+| Recepcionista | Habitaciones hoy (tablero por piso), Solicitudes de huéspedes (todas las áreas), Recepción (llegadas, salidas, huéspedes en casa y gestión de cada reserva), Disponibilidad, Reservas y Habitaciones (puede reservar a nombre de un huésped) |
+| Limpieza | Solicitudes de huéspedes de limpieza, Habitaciones (cambia el estado de limpieza) |
+| Mantenimiento | Solicitudes de huéspedes de mantenimiento, Habitaciones (solo lectura) |
+| Gerente | Todo lo anterior, más Cuentas del personal, Catálogo de servicios, Bitácora y Correos suscritos |
 
 El personal entra directo a su panel de trabajo, sin la página de inicio.
 El pie de página muestra qué réplica de la API respondió la última solicitud.
@@ -207,6 +207,51 @@ visible y el tablero en pantalla; al volver a la pestaña se actualiza enseguida
 minuto. Cada actualización cuesta tres consultas (sesión, habitaciones y reservas del día), sin importar
 cuántas reservas haya. Una pantalla abierta durante un turno de 8 horas hace unas 1440 consultas pequeñas.
 
+### Solicitudes de huéspedes (chat)
+
+Un huésped alojado escribe al hotel desde **Mis reservas** con el botón **Contactar al hotel** (en la estadía en
+curso) o, si la reserva la hizo recepción a nombre de su correo, desde el mismo botón arriba de la lista,
+escribiendo su código. Solo puede escribir durante la estadía, entre el ingreso y la salida, y hasta 5 mensajes
+por minuto. Al primer mensaje elige el tema: recepción y otros, limpieza y amenidades, o algo que no funciona.
+
+Cada conversación es una **solicitud**, que atiende un área:
+
+| Estado | Qué significa |
+|---|---|
+| Abierta | El huésped escribió y nadie la ha tomado |
+| En atención | Alguien la tomó o respondió |
+| Resuelta | Se marcó como resuelta, o el huésped registró su salida |
+
+Mientras una solicitud siga abierta, los mensajes nuevos del huésped se suman a ella; después de resuelta, el
+siguiente mensaje abre otra. La base garantiza que haya una sola abierta por reserva.
+
+El personal ve la tarjeta **Solicitudes de huéspedes**, con la bandeja a la izquierda y la conversación elegida a
+la derecha. Primero aparecen las que esperan respuesta, con el tiempo de espera, y un contador rojo indica
+cuántas faltan por responder. Cada área ve lo suyo: limpieza solo lo de limpieza, mantenimiento solo lo de
+mantenimiento; recepción y gerencia, todo. Desde la conversación se responde, se toma la solicitud, se pasa a
+otra área o se marca resuelta. El huésped no ve el nombre de quien le responde: ve "Hotel Soluna".
+
+**Simulador de huéspedes:** recepción y gerencia tienen el botón **Simular un pedido**, que elige al azar a un
+huésped alojado y envía un pedido típico ("El aire acondicionado no enfría", "¿Nos traen dos toallas más?",
+"Quisiéramos un taxi al aeropuerto"). Requiere al menos un huésped con el ingreso registrado.
+
+**Consumo de la base:** las pantallas preguntan solo mientras están visibles y piden únicamente lo nuevo: las
+solicitudes que cambiaron desde la consulta anterior y los mensajes posteriores al último que ya tienen.
+
+| Pantalla | Frecuencia | Sentencias SQL por consulta |
+|---|---|---|
+| Bandeja del personal | Cada 30 s | 2 |
+| Bandeja con una conversación abierta | Cada 10 s | 4 como máximo |
+| Chat del huésped abierto | Cada 10 s | 4 como máximo |
+
+Con la pestaña en segundo plano o el chat cerrado, no hay consultas. Las solicitudes resueltas se borran,
+con sus mensajes, a los 90 días (30 con ocupación alta), como parte del mantenimiento automático.
+
+Para probarlo en el sitio:
+1. Entre como `recepcion@soluna.test`, registre el ingreso de alguna reserva y pulse **Simular un pedido**.
+2. Para el lado del huésped, reserve con entrada hoy a nombre de `cliente@soluna.test` y registre su ingreso.
+3. Entre como `cliente@soluna.test`, pulse **Contactar al hotel** y escriba el código de la reserva.
+
 ### Recepción (panel del personal)
 
 Debajo del tablero está la tarjeta **Recepción**, con cinco vistas:
@@ -235,9 +280,86 @@ posibles hoy y su historial (tomado de la bitácora, con quién hizo cada cosa):
   tiene factura; las noches adicionales se registran como una reserva nueva.
 - **Cancelar:** la misma cancelación de siempre, con reembolso si hubo pago en línea.
 
-Para probarlo en el sitio de Vercel o en Docker: entre como `recepcion@soluna.test`, reserve desde
-Disponibilidad una habitación con entrada hoy a nombre de un huésped y búsquela en **Llegadas**. Las reservas
-de recepción nacen confirmadas, así que admiten el ingreso de inmediato.
+Para probarlo en el sitio de Vercel o en Docker: entre como `recepcion@soluna.test`, cree una reserva con
+entrada hoy con **Nueva reserva** y búsquela en **Llegadas**. Las reservas de recepción nacen confirmadas, así que
+admiten el ingreso de inmediato.
+
+### Nueva reserva por teléfono o en el mostrador
+
+Cuando alguien llama para reservar, recepción pulsa **Nueva reserva** (tarjeta Recepción) y completa tres pasos:
+
+1. **Fechas y personas.** Empieza con entrada hoy y salida mañana.
+2. **Habitación.** Muestra los tipos libres para esas fechas, con cuántas quedan y el total sin IVA, y deja
+   elegir el número de habitación.
+3. **Huésped.** Nombre, correo y teléfono de contacto, y cómo llegó la reserva: **por teléfono** (el teléfono
+   es obligatorio) o **en el mostrador** (opcional).
+
+Antes de confirmar, el formulario muestra el total con IVA a pagar al llegar y la hora de garantía. El botón
+**Reservar** de Disponibilidad abre el mismo formulario, con las fechas y el tipo ya elegidos. Al crearla, la
+reserva queda confirmada con su código y se abre en la gestión de reservas.
+
+El huésped recibe un correo con el código, la habitación, las fechas, el teléfono registrado, el desglose del
+monto a pagar en la recepción (hospedaje, IVA del 13 % y total) y la política de garantía:
+
+> Le guardamos la habitación y la tarifa acordada hasta las 5:00 p. m. del día de llegada. Si no se presenta
+> antes de esa hora, la reserva se liberará automáticamente: no podremos conservar el precio acordado y su
+> estadía dependerá de las habitaciones disponibles en ese momento. Si ya pagó un adelanto, la reserva se
+> mantiene.
+
+La garantía aplica a las reservas que se pagan al llegar (por teléfono o en el mostrador) mientras el huésped no
+ha ingresado; las reservas en línea ya están pagadas y las de la agencia las garantiza la agencia. No aplica si
+el huésped pagó un adelanto en la recepción, ni si la reserva se tomó después de la hora de garantía de su mismo
+día de llegada (por ejemplo, una llamada a las 7 p. m. para llegar esa noche): en ese caso el correo explica que
+la habitación queda a su nombre para esa noche y no se libera sola. La hora se configura con la variable
+`HORA_GARANTIA` (17 por omisión) y el teléfono del hotel que aparece en el correo, con `TELEFONO_HOTEL`. Si se
+modifican las fechas o la habitación, el correo de cambio repite el monto y la nueva garantía.
+
+#### Liberación automática de las reservas no presentadas
+
+Cuando vence la garantía, la reserva se cancela sola y la habitación vuelve a estar disponible. La regla vive en
+una función de la base, `liberar_no_presentados()`, que cancela las reservas confirmadas que se pagan al llegar,
+sin adelanto, tomadas antes de la hora de garantía y cuya hora de garantía ya pasó. La ejecutan dos caminos que
+hacen exactamente lo mismo:
+
+- **`pg_cron`, cada hora en el minuto 5** (tarea `soluna-liberar-no-presentados`). La corrida de las 5:05 p. m.
+  libera las llegadas del día pocos minutos después del plazo.
+- **El botón Liberar no presentados** de Recepción, para no esperar a la siguiente corrida. Pide confirmación
+  y avisa qué reservas liberó (o que no había ninguna).
+
+Entre el vencimiento y la liberación, el tablero y la lista de recepción muestran **Garantía vencida**. Cada
+reserva liberada queda en su historial como *Liberada: no se presentó antes de la hora de garantía*, hecha por
+el sistema; si la liberación la pidió una persona con el botón, la bitácora también registra quién. La función
+es idempotente: una reserva liberada queda cancelada y no vuelve a cumplir las condiciones. No envía correo,
+porque la confirmación ya anunció la política. En Docker no hay `pg_cron`; ahí se usa el botón o
+`docker compose exec db psql -U postgres -d hotel -c "SELECT * FROM liberar_no_presentados()"`.
+
+### Cuenta de la habitación: consumos y factura final
+
+Cada reserva tiene una **cuenta de la habitación**, que se ve en la gestión de la reserva (**Gestionar**). Ahí
+se cargan los consumos del huésped mientras está alojado: room service, restaurante, bar, minibar, spa,
+lavandería, transporte, tours u otros servicios que la habitación no incluye. Se cargan del **catálogo de
+servicios** o como cargo libre, con descripción, categoría y precio.
+
+| Concepto | Cómo se calcula |
+|---|---|
+| Hospedaje | El total de la estadía si se paga en el hotel (recepción o teléfono); si se pagó en línea o lo paga la agencia, no suma |
+| Consumos | Los cargos vigentes (los anulados quedan a la vista, tachados, con su motivo) |
+| IVA | 13 % del subtotal, igual que en la factura |
+| Pagado | Pagos recibidos en recepción: al llegar, adelantos o al salir (efectivo, tarjeta, SINPE Móvil o transferencia) |
+| **Por pagar a la salida** | Total menos lo pagado; se muestra también en la ficha de la reserva |
+
+- **Al registrar la salida:** si queda saldo, el botón pasa a ser **Cobrar USD X y registrar salida**. Cobra el
+  saldo exacto con el método elegido y emite la **factura electrónica final**, con una línea por concepto
+  (hospedaje y cada consumo), que se envía al simulador de Hacienda. Sin método de pago, la API rechaza la salida.
+- **Correo de salida:** incluye el resumen de la cuenta (cada consumo, IVA, total, pagos) y el número de la
+  factura final.
+- **El huésped** ve su cuenta desde **Mis reservas > Mi cuenta**, sin los nombres del personal.
+- **Gerencia** administra el **Catálogo de servicios**: agrega, cambia precios, activa y desactiva. Un cambio de
+  precio no altera lo ya cargado, porque cada cargo copia el precio del momento.
+- **Nada se borra:** un cargo equivocado se anula con motivo, un pago no se edita y los montos de una factura
+  nunca cambian. Cada carga, anulación y pago queda en la bitácora y en el historial de la reserva.
+
+Una reserva puede tener dos facturas: la del hospedaje pagado en línea y la de la cuenta final.
 
 ## Demostraciones del bloque 2
 
@@ -501,13 +623,16 @@ simulador. La función `hotel.mantenimiento()` los recorta con esta política:
 | Bitácora | Registros de más de 365 días | Registros de más de 90 días |
 | Historial de `pg_cron` (`cron.job_run_details`) | Más de 7 días | Más de 3 días |
 | Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
+| Solicitudes de huéspedes resueltas, con sus mensajes | Más de 90 días | Más de 30 días |
 
-`pg_cron` la ejecuta en Supabase con dos tareas:
+`pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye una tercera tarea programada, que no limpia
+la base sino que libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*).
 
 | Tarea | Cuándo | Qué hace |
 |---|---|---|
 | `soluna-vigilar-ocupacion` | Cada hora (minuto 47) | Mide la base; si la ocupación es alta, limpia de inmediato |
 | `soluna-limpieza-diaria` | Todos los días a las 03:17 de Costa Rica | Aplica la retención normal y deja constancia en la bitácora |
+| `soluna-liberar-no-presentados` | Cada hora (minuto 5) | Cancela las reservas que se pagan al llegar cuya garantía venció |
 
 Los 365 días siguen el mínimo de 12 meses de conservación de la bitácora de PCI DSS 4.0 (requisito 10.5.1), y
 los 90 días, los 3 meses que esa norma pide mantener disponibles de inmediato. La ocupación alta es una medida
@@ -756,7 +881,7 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | POST | `/api/auth/registro` | Público (crea siempre una cuenta de cliente) |
 | POST | `/api/auth/login` | Público. Bloquea la cuenta 15 minutos tras 5 intentos fallidos |
 | GET | `/api/disponibilidad` | Público |
-| POST | `/api/reservas` | Cliente, recepcionista, gerente |
+| POST | `/api/reservas` | Cliente, recepcionista, gerente. El personal indica `canal` (`recepcion` o `telefono`) y `telefono_huesped`, obligatorio por teléfono |
 | GET | `/api/reservas` | Cliente (solo las suyas), recepcionista, gerente |
 | POST | `/api/reservas/{codigo}/cancelar` | Dueño de la reserva, recepcionista, gerente |
 | GET | `/api/habitaciones` | Personal del hotel |
@@ -773,12 +898,27 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/resenas` | Público: promedio, total y las reseñas más recientes |
 | POST | `/api/resenas` | Cuenta activa con una reservación propia ya cumplida (una reseña por reservación) |
 | GET | `/api/gestion/tablero` | Recepcionista, gerente: situación de cada habitación hoy e indicadores del día |
+| POST | `/api/gestion/liberar-no-presentados` | Recepcionista, gerente: libera ya las reservas con la garantía vencida (lo mismo que `pg_cron` cada hora) |
 | GET | `/api/gestion/reservas` | Recepcionista, gerente: búsqueda y vistas de recepción (`vista`, `q`) |
 | GET | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: detalle con acciones posibles e historial |
 | GET | `/api/gestion/reservas/{codigo}/alternativas` | Recepcionista, gerente: habitaciones a las que se puede mover, con su total |
 | POST | `/api/gestion/reservas/{codigo}/check-in` | Recepcionista, gerente |
 | POST | `/api/gestion/reservas/{codigo}/check-out` | Recepcionista, gerente |
 | PATCH | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: cambia habitación, fechas o personas |
+| GET | `/api/gestion/reservas/{codigo}/cuenta` | Recepcionista, gerente: estado de cuenta con lo que falta por pagar a la salida |
+| POST | `/api/gestion/reservas/{codigo}/cargos` | Recepcionista, gerente: carga un consumo del catálogo o libre (huésped alojado) |
+| POST | `/api/gestion/reservas/{codigo}/cargos/{id}/anular` | Recepcionista, gerente: anula un cargo con motivo |
+| POST | `/api/gestion/reservas/{codigo}/pagos` | Recepcionista, gerente: pago en caja, sin superar el saldo |
+| POST | `/api/gestion/reservas/{codigo}/check-out` | Recibe `metodo_pago` si hay saldo: lo cobra y emite la factura final |
+| GET | `/api/servicios` | Recepcionista, gerente (con `todos=true`, gerencia ve también los inactivos) |
+| POST/PATCH | `/api/servicios`, `/api/servicios/{id}` | Gerente: agrega, cambia, activa o desactiva servicios |
+| GET | `/api/reservas/{codigo}/cuenta` | Cliente titular: su cuenta, sin nombres del personal |
+| GET | `/api/solicitudes` | Personal, cada área lo suyo: bandeja; con `desde`, solo lo que cambió, y con `abierta` y `despues`, los mensajes nuevos de una conversación |
+| POST | `/api/solicitudes/{id}/mensajes` | Personal del área: responde al huésped |
+| PATCH | `/api/solicitudes/{id}` | Personal del área: tomar, pasar a otra área, resolver o reabrir |
+| POST | `/api/solicitudes/simular` | Recepcionista, gerente: pedido de un huésped alojado al azar |
+| GET | `/api/reservas/{codigo}/solicitudes` | Cliente titular de la reserva (por cuenta o por correo): su conversación |
+| POST | `/api/reservas/{codigo}/solicitudes` | Cliente titular, solo durante la estadía y hasta 5 mensajes por minuto |
 
 Todas las rutas se acceden a través de Nginx: `https://localhost/api/...`.
 Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del simulador accesible desde fuera.
@@ -797,6 +937,13 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
   - La regla `sin_traslape` impide la sobreventa incluso con solicitudes simultáneas.
   - La API usa un usuario con privilegios mínimos: no puede borrar reservas, alterar la bitácora ni cambiar tablas.
 - **Bitácora:** registra quién hizo qué, cuándo y desde qué réplica.
+- **Cuenta de la habitación:** la API puede registrar cargos, pagos y servicios, pero no borrarlos; de un cargo
+  solo puede escribir su anulación (quién, cuándo y por qué), y de una factura nunca cambia montos ni líneas.
+  Ningún pago en caja supera el saldo, y la salida no se registra con saldo pendiente sin cobrarlo.
+- **Chat con huéspedes:** solo escribe el titular de la reserva, durante su estadía y hasta 5 mensajes por
+  minuto; un código ajeno responde igual que uno inexistente. Cada área del personal ve solo sus solicitudes. La
+  API puede crear y leer solicitudes y mensajes, pero no editar ni borrar mensajes, ni cambiar a qué reserva
+  pertenece una solicitud. Los mensajes se muestran como texto, nunca como HTML.
 - **Recepción:** el ingreso, la salida y los cambios bloquean la fila de la reserva (y la de la habitación en
   el ingreso y la salida), así que dos personas no pueden alojar a dos huéspedes en la misma habitación al mismo
   tiempo. Los cambios pasan por la misma regla `sin_traslape` que impide la sobreventa.
@@ -829,7 +976,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 126 pruebas automáticas. Cubren:
+`api/tests` contiene 190 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -857,6 +1004,21 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 - Tablero de habitaciones: permisos, cada situación (incluido el día de cambio de huésped, la salida atrasada,
   la reserva sin pagar y la habitación fuera de servicio con una llegada), indicadores, cambios tras el ingreso y
   la salida, y un número fijo de consultas aunque crezcan las reservas.
+- Cuenta de la habitación: cargos del catálogo y libres, precio copiado al cargar, solo con el huésped alojado,
+  anulación con motivo, pagos parciales y excesivos, hospedaje pagado en línea o por agencia, salida que cobra el
+  saldo y emite la factura final aceptada por el simulador de Hacienda, convivencia con la factura del hospedaje,
+  vista del huésped, catálogo de gerencia y permisos de la base.
+- Solicitudes de huéspedes: una sola solicitud abierta por reserva, reserva por cuenta o por correo, código
+  ajeno igual a inexistente, escritura solo durante la estadía, límite por minuto, mensajes inválidos, cada área
+  ve lo suyo, conversación completa, tomar, reasignar y reabrir, consultas incrementales, número fijo de
+  sentencias, simulador, cierre al registrar la salida, permisos de la base y retención.
+- Reservas por teléfono: teléfono obligatorio y su formato (en la API y en la base), canal de mostrador, el
+  cliente no elige canal, correo con monto, IVA, teléfono y política de garantía, garantía solo para pago al
+  llegar, garantía vencida en el tablero y correo de cambio con el monto nuevo.
+- Liberación de no presentados: cancela la llegada vencida sin adelanto y deja constancia del sistema y de quién
+  pulsó el botón; no toca reservas en línea, de la agencia, ya hospedadas, con adelanto, de mañana ni tomadas
+  después de la hora de garantía; es idempotente; respeta `HORA_GARANTIA`; la función responde sin la API (como
+  la llama `pg_cron`); tablero, detalle y correo anuncian lo mismo que hace la función; permisos por rol.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 

@@ -4,6 +4,7 @@ Son las etapas 1 y 2 del panel del personal. Todas las rutas son para
 recepción y gerencia:
 
   GET   /api/gestion/tablero                         situación de cada habitación hoy (etapa 2).
+  POST  /api/gestion/liberar-no-presentados         libera ya las reservas sin ingreso pasada la garantía.
   GET   /api/gestion/reservas                        busca por código, huésped, correo o habitación.
   GET   /api/gestion/reservas/{codigo}               detalle con habitación, acciones posibles e historial.
   GET   /api/gestion/reservas/{codigo}/alternativas  habitaciones a las que se puede mover, con su precio.
@@ -32,24 +33,26 @@ toda la estadía. Para mover a un huésped que ya ingresó, la habitación nueva
 debe estar libre desde su fecha de entrada; la ruta de alternativas solo
 ofrece las que cumplen esa condición.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from psycopg import errors as pg_errores
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import correo
+from .. import config, correo, facturacion
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol
 from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, HabitacionEnTablero,
-                        ReservaEnTablero, ReservaSalida, ResumenTablero, Tablero, VistaRecepcion)
+                        ReservaEnTablero, ReservaLiberada, ReservaSalida, ResumenTablero, SalidaHuesped, Tablero,
+                        VistaRecepcion)
 from ..facturacion import impuesto_de
-from ..modelos import Habitacion, Pago, RegistroBitacora, Reserva, Usuario
-from .reservas import (ESTADOS_CANCELABLES, MAX_NOCHES, buscar_reserva, calcular_total,
-                       habitaciones_libres, hoy, salida_reserva)
+from ..modelos import Habitacion, Pago, PagoCaja, RegistroBitacora, Reserva, Solicitud, Usuario
+from .cuentas import CERO, cuenta_de, lineas_cuenta_final, texto_cuenta
+from .reservas import (CANALES_PAGO_EN_HOTEL, ESTADOS_CANCELABLES, MAX_NOCHES, bloque_pago_en_hotel,
+                       buscar_reserva, calcular_total, garantia_hasta, habitaciones_libres, hoy, salida_reserva)
 
 router = APIRouter(prefix="/api/gestion", tags=["gestión de reservas"])
 RECEPCION = requiere_rol("recepcionista", "gerente")
@@ -271,10 +274,12 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
     visible, para no gastar consultas del plan gratuito de la base.
     """
     dia = hoy()
+    ahora = datetime.now(config.ZONA_HORARIA)
     habitaciones = sesion.scalars(select(Habitacion).order_by(Habitacion.piso, Habitacion.numero)).all()
     filas = sesion.execute(
         select(Reserva.habitacion_id, Reserva.codigo, Reserva.nombre_huesped, Reserva.personas,
-               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado)
+               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado, Reserva.canal,
+               Reserva.creada_en, Reserva.con_adelanto)
         .where(or_(Reserva.estado == "en_curso",
                    and_(Reserva.estado.in_(("pendiente_pago", "confirmada")),
                         Reserva.fecha_entrada <= dia, Reserva.fecha_salida > dia)))
@@ -283,9 +288,10 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
     ocupantes: dict[int, ReservaEnTablero] = {}
     llegadas: dict[int, ReservaEnTablero] = {}
     for fila in filas:
+        limite = garantia_hasta(fila.canal, fila.estado, fila.fecha_entrada, fila.creada_en, fila.con_adelanto)
         reserva = ReservaEnTablero(codigo=fila.codigo, nombre_huesped=fila.nombre_huesped, personas=fila.personas,
                                    fecha_entrada=fila.fecha_entrada, fecha_salida=fila.fecha_salida,
-                                   estado=fila.estado)
+                                   estado=fila.estado, garantia_vencida=limite is not None and ahora >= limite)
         destino = ocupantes if fila.estado == "en_curso" else llegadas
         destino.setdefault(fila.habitacion_id, reserva)   # la más antigua, si hubiera dos
 
@@ -311,6 +317,28 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
         fuera_de_servicio=fuera,
     )
     return Tablero(fecha=dia, resumen=resumen, habitaciones=resultado)
+
+
+@router.post("/liberar-no-presentados", response_model=list[ReservaLiberada])
+def liberar_no_presentados(sesion: Session = Depends(obtener_sesion), usuario: Usuario = Depends(RECEPCION)):
+    """Libera ahora las reservas no presentadas, lo mismo que pg_cron hace cada hora en Supabase.
+
+    La regla vive en la función liberar_no_presentados() de la base, para
+    que la tarea programada y este botón hagan exactamente lo mismo: cancela
+    las reservas que se pagan al llegar, confirmadas, sin adelanto pagado y
+    tomadas antes de la hora de garantía del día de entrada, cuando esa hora
+    ya pasó. Cada una queda en
+    la bitácora como acción del sistema; aquí se registra además quién pidió
+    la liberación.
+    """
+    filas = sesion.execute(text("SELECT * FROM liberar_no_presentados(:hora)"),
+                           {"hora": config.HORA_GARANTIA}).all()
+    if filas:
+        registrar(sesion, usuario, "liberar_no_presentados", "sistema", None,
+                  reservas=[f.codigo_reserva for f in filas])
+    sesion.commit()
+    return [ReservaLiberada(codigo=f.codigo_reserva, habitacion=f.numero_habitacion, fecha_entrada=f.entrada)
+            for f in filas]
 
 
 # ---------------------------------------------------------------------
@@ -361,37 +389,72 @@ def check_in(codigo: str, sesion: Session = Depends(obtener_sesion), usuario: Us
 
 
 @router.post("/reservas/{codigo}/check-out", response_model=ReservaSalida)
-def check_out(codigo: str, tareas: BackgroundTasks, sesion: Session = Depends(obtener_sesion),
-              usuario: Usuario = Depends(RECEPCION)):
-    """Registra la salida: la reserva pasa a finalizada y la habitación queda sucia para limpieza.
+def check_out(codigo: str, tareas: BackgroundTasks, datos: SalidaHuesped | None = None,
+              sesion: Session = Depends(obtener_sesion), usuario: Usuario = Depends(RECEPCION)):
+    """Registra la salida: cobra la cuenta, emite la factura final y deja la habitación sucia para limpieza.
+
+    Algoritmo, en una sola transacción:
+      1. Calcula la cuenta. Si queda saldo, exige el método de pago (409 si
+         falta) y registra el cobro por el saldo exacto.
+      2. Si hubo algo que cobrar en el hotel (hospedaje que se paga al llegar
+         o consumos), emite la factura electrónica final con una línea por
+         concepto. Se envía a Hacienda después de confirmar la transacción.
+      3. Cierra las solicitudes abiertas, marca la habitación sucia y
+         finaliza la reserva.
 
     Si el huésped se va antes de lo previsto, la salida se adelanta a hoy (o
     al día siguiente de la entrada, si llegó hoy) y las noches restantes
     quedan libres para otros huéspedes. El monto no cambia. Al final se le
-    envía un correo de agradecimiento que lo invita a dejar una reseña.
+    envía un correo de agradecimiento con el resumen de su cuenta y la
+    invitación a dejar una reseña.
     """
     reserva = buscar_reserva(sesion, codigo, usuario, bloquear=True)
     if reserva.estado != "en_curso":
         raise conflicto(f"Solo se registra la salida de una estadía en curso; esta reserva está "
                         f"{EN_FRASE[reserva.estado]}.")
-    dia = hoy()
+    cuenta = cuenta_de(sesion, reserva)
     extra = {}
+    if cuenta.por_pagar > CERO:
+        if not (datos and datos.metodo_pago):
+            raise conflicto(f"La cuenta tiene un saldo pendiente de USD {cuenta.por_pagar}. Indique el método de "
+                            "pago para cobrarlo al registrar la salida.")
+        sesion.add(PagoCaja(reserva_id=reserva.id, metodo=datos.metodo_pago, monto=cuenta.por_pagar,
+                            referencia=datos.referencia, recibido_por=usuario.id))
+        extra["cobrado"] = str(cuenta.por_pagar)
+        extra["metodo_pago"] = datos.metodo_pago
+    dia = hoy()
     if dia < reserva.fecha_salida:
         extra["salida_prevista"] = str(reserva.fecha_salida)
         reserva.fecha_salida = max(dia, reserva.fecha_entrada + timedelta(days=1))
 
+    # Factura final por lo cobrado en el hotel (si no se emitió antes)
+    factura = None
+    if cuenta.subtotal > CERO and cuenta.factura_final is None:
+        lineas, subtotal = lineas_cuenta_final(sesion, reserva)
+        factura = facturacion.crear_cuenta_final(sesion, reserva, lineas, subtotal)
+        extra["factura_final"] = factura.consecutivo
+
     habitacion = bloquear_habitacion(sesion, reserva.habitacion_id)
     habitacion.estado_limpieza = "sucia"
+    # Las solicitudes que el huésped dejó abiertas se cierran con su salida
+    sesion.execute(update(Solicitud)
+                   .where(Solicitud.reserva_id == reserva.id, Solicitud.estado != "resuelta")
+                   .values(estado="resuelta", resuelta_en=func.now(), pendiente_desde=None,
+                           actualizada_en=func.now()))
     reserva.estado = "finalizada"
     reserva.actualizada_en = func.now()
     registrar(sesion, usuario, "check_out", "reserva", reserva.codigo, habitacion=habitacion.numero, **extra)
     sesion.commit()
     sesion.refresh(reserva)
+    # El cobro y la factura ya quedaron guardados; si Hacienda no responde, la factura queda pendiente
+    if factura is not None:
+        facturacion.enviar_a_hacienda(sesion, factura)
 
     correo.programar(
         tareas, reserva.correo_huesped, "Gracias por hospedarse en el Hotel Soluna",
         f"Hola, {reserva.nombre_huesped}:\n\nRegistramos su salida de la habitación {habitacion.numero}. "
         f"Gracias por elegirnos; esperamos recibirle de nuevo en Playa Sámara.\n\n"
+        f"{texto_cuenta(cuenta_de(sesion, reserva, para_huesped=True))}\n"
         f"Si desea contar su experiencia, puede escribir una reseña en la sección Reseñas de nuestro sitio "
         f"web con el código {reserva.codigo}. Para opinar necesita una cuenta de cliente con este mismo "
         f"correo.\n")
@@ -476,9 +539,11 @@ def modificar(codigo: str, cambio: CambioReserva, tareas: BackgroundTasks,
 
     if antes["habitacion"] != despues["habitacion"] or antes["entrada"] != despues["entrada"] \
             or antes["salida"] != despues["salida"]:
+        # Si se paga al llegar, el correo repite el monto y la hora de garantía con los datos nuevos
+        pago = (f"\n{bloque_pago_en_hotel(reserva)}" if reserva.canal in CANALES_PAGO_EN_HOTEL
+                else f"Total con IVA: USD {reserva.total + impuesto_de(reserva.total)}\n")
         correo.programar(
             tareas, reserva.correo_huesped, f"Reserva modificada {reserva.codigo}",
             f"Hola, {reserva.nombre_huesped}:\n\nActualizamos su reserva en el Hotel Soluna. Estos son los "
-            f"datos vigentes:\n\n{correo.detalle_reserva(reserva)}\n"
-            f"Total con IVA: USD {reserva.total + impuesto_de(reserva.total)}\n")
+            f"datos vigentes:\n\n{correo.detalle_reserva(reserva)}\n{pago}")
     return salida_reserva(reserva)

@@ -21,6 +21,10 @@
   <script src="/gestion.js" defer></script>
   <!-- Tablero de habitaciones; usa app.js y abre la gestión de gestion.js -->
   <script src="/tablero.js" defer></script>
+  <!-- Chat de solicitudes: bandeja del personal y chat del huésped -->
+  <script src="/solicitudes.js" defer></script>
+  <!-- Cuenta de la habitación, catálogo de servicios y "Mi cuenta"; usa app.js y gestion.js -->
+  <script src="/cuenta.js" defer></script>
 </head>
 <body data-modo="sitio">
   <!-- Accesibilidad: enlace visible solo con el teclado para saltar el menú -->
@@ -197,11 +201,12 @@
     <!-- ============================================================ reservar -->
     <!-- Herramientas de trabajo. Cada tarjeta sec-* se muestra según el rol (VISTAS en app.js):
          tablero       recepción y gerencia (situación de cada habitación hoy, en tablero.js)
+         solicitudes   todo el personal, cada área lo suyo (chat con huéspedes, en solicitudes.js)
          recepcion     recepción y gerencia (llegadas, salidas y gestión de reservas, en gestion.js)
          buscar        público, clientes, recepción y gerencia
          reservas      clientes (las suyas), recepción y gerencia
          habitaciones  todo el personal
-         usuarios, bitacora y suscriptores  solo gerencia -->
+         usuarios, servicios, bitacora y suscriptores  solo gerencia (servicios: catálogo, en cuenta.js) -->
     <section id="reservar" class="bloque bloque-reservar">
       <div class="bloque-encabezado solo-sitio">
         <p class="antetitulo">Reservaciones</p>
@@ -225,12 +230,69 @@
         <div id="pisos-tablero"></div>
       </section>
 
+      <!-- Solicitudes de huéspedes: bandeja del área y conversación elegida. Se actualiza sola,
+           solo con la pestaña visible: cada 10 s con una conversación abierta y cada 30 s con solo
+           la bandeja, y pide únicamente lo nuevo. -->
+      <section id="sec-solicitudes" class="tarjeta" hidden>
+        <div class="encabezado">
+          <h2>Solicitudes de huéspedes <span id="pendientes-solicitudes" class="contador" hidden></span></h2>
+          <div class="botones-fila centrados">
+            <span id="actualizado-solicitudes" class="nota sin-margen" aria-live="polite"></span>
+            <button id="btn-simular-solicitud" class="boton claro" type="button" hidden>Simular un pedido</button>
+          </div>
+        </div>
+        <div class="chat-personal">
+          <div class="columna-bandeja">
+            <div class="vistas" role="group" aria-label="Solicitudes que se muestran">
+              <button type="button" data-filtro-solicitudes="activas" aria-pressed="true">Activas</button>
+              <button type="button" data-filtro-solicitudes="resueltas" aria-pressed="false">Resueltas hoy</button>
+            </div>
+            <ul id="bandeja-solicitudes" class="bandeja" aria-label="Bandeja de solicitudes"></ul>
+          </div>
+          <div class="conversacion">
+            <p id="conversacion-vacia" class="vacio">Elija una solicitud para ver la conversación.</p>
+            <div id="conversacion-activa" class="conversacion-activa" hidden>
+              <header class="conversacion-encabezado">
+                <div>
+                  <strong id="conv-titulo"></strong>
+                  <small id="conv-detalle"></small>
+                </div>
+                <div class="botones-fila centrados">
+                  <label class="en-linea">Área
+                    <select id="conv-area">
+                      <option value="recepcion">Recepción</option>
+                      <option value="limpieza">Limpieza</option>
+                      <option value="mantenimiento">Mantenimiento</option>
+                    </select></label>
+                  <button id="conv-tomar" class="boton claro pequeno" type="button">Tomar</button>
+                  <button id="conv-resolver" class="boton pequeno" type="button">Marcar resuelta</button>
+                  <button id="conv-reabrir" class="boton claro pequeno" type="button">Reabrir</button>
+                </div>
+              </header>
+              <ol id="conv-mensajes" class="mensajes" aria-label="Mensajes"></ol>
+              <form id="form-respuesta" class="redactar">
+                <label class="sr" for="respuesta-texto">Respuesta al huésped</label>
+                <textarea id="respuesta-texto" name="texto" rows="2" maxlength="1000" required
+                  placeholder="Escriba la respuesta al huésped"></textarea>
+                <button class="boton" type="submit">Enviar</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Recepción: llegadas, salidas y huéspedes en casa, con búsqueda. "Gestionar" abre
            el diálogo dlg-gestion con el check-in, el check-out, los cambios y el historial. -->
       <section id="sec-recepcion" class="tarjeta" hidden>
         <div class="encabezado">
           <h2>Recepción</h2>
-          <button id="btn-recargar-recepcion" class="boton claro" type="button">Actualizar</button>
+          <div class="botones-fila">
+            <!-- Reserva tomada por teléfono o en el mostrador: abre dlg-nueva-reserva -->
+            <button id="btn-nueva-reserva" class="boton" type="button">Nueva reserva</button>
+            <!-- Lo mismo que hace el sistema cada hora: libera las reservas con la garantía vencida -->
+            <button id="btn-liberar" class="boton claro" type="button">Liberar no presentados</button>
+            <button id="btn-recargar-recepcion" class="boton claro" type="button">Actualizar</button>
+          </div>
         </div>
         <div class="vistas" role="group" aria-label="Reservas que se muestran">
           <button type="button" data-vista="llegadas" aria-pressed="true">Llegadas</button>
@@ -263,7 +325,11 @@
       <section id="sec-reservas" class="tarjeta" hidden>
         <div class="encabezado">
           <h2 id="titulo-reservas">Reservas</h2>
-          <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
+          <div class="botones-fila">
+            <!-- Solo para clientes: chat con el hotel durante la estadía (pide el código de la reserva) -->
+            <button id="btn-contactar" class="boton claro" type="button" hidden>Contactar al hotel</button>
+            <button id="btn-recargar-reservas" class="boton claro" type="button">Actualizar</button>
+          </div>
         </div>
         <!-- Tabla con botones Pagar, Factura y Cancelar según el estado de cada reserva -->
         <div id="lista-reservas"></div>
@@ -296,6 +362,20 @@
           <button class="boton" type="submit">Crear cuenta</button>
         </form>
         <div id="lista-usuarios"></div>
+      </section>
+
+      <!-- Catálogo de servicios que se cargan a las habitaciones (gerencia, cuenta.js) -->
+      <section id="sec-servicios" class="tarjeta" hidden>
+        <h2>Catálogo de servicios</h2>
+        <p class="nota">Precios sin IVA. Cambiar un precio no altera lo ya cargado a las cuentas; un servicio
+          desactivado deja de ofrecerse, pero se conserva en las cuentas que ya lo tienen.</p>
+        <form id="form-servicio" class="fila">
+          <label class="crece">Servicio <input name="nombre" required minlength="2" maxlength="80"></label>
+          <label>Categoría <select name="categoria"></select></label>
+          <label>Precio (sin IVA) <input name="precio" type="number" min="0.01" step="0.01" required class="corto"></label>
+          <button class="boton" type="submit">Agregar</button>
+        </form>
+        <div id="lista-servicios"></div>
       </section>
 
       <section id="sec-bitacora" class="tarjeta" hidden>
@@ -388,16 +468,44 @@
     </form>
   </dialog>
 
-  <!-- Recepción o gerencia completan los datos del huésped antes de reservar a su nombre -->
-  <dialog id="dlg-huesped">
-    <form id="form-huesped" method="dialog">
-      <h2>Datos del huésped</h2>
-      <p id="resumen-huesped" class="nota"></p>
-      <label>Nombre completo <input name="nombre_huesped" required minlength="2"></label>
-      <label>Correo <input name="correo_huesped" type="email" required></label>
+  <!-- Nueva reserva tomada por recepción o gerencia (gestion.js): por teléfono o en el mostrador.
+       Se abre desde "Nueva reserva" en Recepción o desde "Reservar" en Disponibilidad. El huésped
+       paga al llegar; habitación y tarifa se garantizan hasta las 17:00 del día de entrada, y el
+       correo de confirmación lo explica. -->
+  <dialog id="dlg-nueva-reserva" class="ancho" aria-labelledby="nueva-titulo">
+    <form id="form-nueva-reserva" class="nueva-reserva">
+      <h2 id="nueva-titulo">Nueva reserva</h2>
+      <fieldset class="paso">
+        <legend>1. Fechas y personas</legend>
+        <div class="fila compacta">
+          <label>Entrada <input name="entrada" type="date" required></label>
+          <label>Salida <input name="salida" type="date" required></label>
+          <label>Personas <input name="personas" type="number" min="1" max="10" value="2" required></label>
+        </div>
+      </fieldset>
+      <fieldset class="paso">
+        <legend>2. Habitación</legend>
+        <div id="nueva-tipos" class="tipos" role="radiogroup" aria-label="Tipo de habitación"></div>
+        <label>Número de habitación <select name="habitacion_id" required></select></label>
+      </fieldset>
+      <fieldset class="paso">
+        <legend>3. Huésped</legend>
+        <div class="canales" role="radiogroup" aria-label="Cómo llegó la reserva">
+          <label class="en-linea"><input type="radio" name="canal" value="telefono" checked> Por teléfono</label>
+          <label class="en-linea"><input type="radio" name="canal" value="recepcion"> En el mostrador</label>
+        </div>
+        <label>Nombre completo <input name="nombre_huesped" required minlength="2" maxlength="120" autocomplete="off"></label>
+        <div class="fila compacta">
+          <label>Correo <input name="correo_huesped" type="email" required autocomplete="off"></label>
+          <label>Teléfono de contacto <input name="telefono_huesped" type="tel" maxlength="25" autocomplete="off"
+            placeholder="+506 8888-8888" pattern="\s*\+?[0-9 \(\)\-]{8,20}\s*"></label>
+        </div>
+      </fieldset>
+      <div id="nueva-resumen" class="resumen-reserva" aria-live="polite"></div>
+      <p id="error-nueva" class="aviso error" role="alert" hidden></p>
       <div class="acciones">
         <button class="boton claro" type="button" data-cerrar>Cancelar</button>
-        <button class="boton" type="submit" value="enviar">Confirmar reserva</button>
+        <button id="btn-crear-reserva" class="boton" type="submit">Crear reserva y enviar confirmación</button>
       </div>
     </form>
   </dialog>
@@ -488,10 +596,84 @@
         </div>
       </form>
 
+      <!-- Cuenta de la habitación (cuenta.js): totales, consumos, pagos y factura final -->
+      <section id="gestion-cuenta" class="cuenta" aria-labelledby="cuenta-titulo">
+        <h3 id="cuenta-titulo">Cuenta de la habitación</h3>
+        <div id="cuenta-contenido"></div>
+        <form id="form-cargo" class="fila cargo" hidden>
+          <label class="crece">Consumo <select name="servicio_id" required></select></label>
+          <label>Cantidad <input name="cantidad" type="number" min="1" max="99" value="1" required class="corto"></label>
+          <label class="crece solo-libre" hidden>Descripción <input name="descripcion" maxlength="120"></label>
+          <label class="solo-libre" hidden>Categoría <select name="categoria"></select></label>
+          <label class="solo-libre" hidden>Precio (sin IVA) <input name="precio_unitario" type="number" min="0.01" step="0.01" class="corto"></label>
+          <button class="boton" type="submit">Cargar a la habitación</button>
+        </form>
+        <form id="form-pago-caja" class="fila pago-caja" hidden>
+          <label>Monto <input name="monto" type="number" min="0.01" step="0.01" required class="corto"></label>
+          <label>Método <select name="metodo"></select></label>
+          <label class="crece">Referencia (voucher o comprobante) <input name="referencia" maxlength="60" autocomplete="off"></label>
+          <button class="boton claro" type="submit">Registrar pago</button>
+        </form>
+      </section>
+
       <h3>Historial</h3>
       <ol id="gestion-historial" class="historial"></ol>
       <div class="acciones">
         <button class="boton" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Chat del huésped con el hotel (solicitudes.js). Desde "Mis reservas" llega con el código;
+       desde "Contactar al hotel", primero lo pide. Solo se escribe durante la estadía. -->
+  <dialog id="dlg-chat" class="ancho" aria-labelledby="chat-titulo">
+    <div class="gestion">
+      <div class="encabezado">
+        <h2 id="chat-titulo">Contactar al hotel</h2>
+        <span id="chat-habitacion" class="nota sin-margen"></span>
+      </div>
+      <p class="nota sin-margen">Escriba lo que necesite durante su estadía: el personal le responde aquí mismo.</p>
+      <form id="form-chat-codigo" class="fila">
+        <label class="crece">Código de su reservación
+          <input name="codigo" required maxlength="20" autocomplete="off" placeholder="SOL-XXXXXX" class="codigo"
+            pattern="\s*[Ss][Oo][Ll]-[A-Za-z0-9]{6}\s*"></label>
+        <button class="boton" type="submit">Abrir</button>
+      </form>
+      <ol id="chat-mensajes" class="mensajes" aria-label="Mensajes"></ol>
+      <p id="error-chat" class="aviso error" role="alert" hidden></p>
+      <p id="chat-cerrado" class="nota" hidden>El chat está disponible durante su estadía: desde que registra su
+        ingreso hasta su salida.</p>
+      <form id="form-chat" class="redactar" hidden>
+        <label id="chat-tema" class="en-linea">Tema
+          <select name="categoria">
+            <option value="recepcion">Recepción y otros</option>
+            <option value="limpieza">Limpieza y amenidades</option>
+            <option value="mantenimiento">Algo no funciona</option>
+          </select></label>
+        <label class="sr" for="chat-texto">Mensaje</label>
+        <textarea id="chat-texto" name="texto" rows="2" maxlength="1000" required
+          placeholder="Por ejemplo: ¿nos pueden traer dos toallas más?"></textarea>
+        <button class="boton" type="submit">Enviar</button>
+      </form>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Cuenta de la estadía vista por el huésped (cuenta.js): consumos, pagos y por pagar a la salida -->
+  <dialog id="dlg-mi-cuenta" class="ancho" aria-labelledby="mi-cuenta-titulo">
+    <div class="gestion">
+      <div class="encabezado">
+        <h2 id="mi-cuenta-titulo">Mi cuenta</h2>
+        <code id="mi-cuenta-codigo"></code>
+      </div>
+      <p class="nota sin-margen">Lo que se ha cargado a su habitación y lo que queda por pagar al salir. Si ve un
+        cargo que no reconoce, escríbanos con "Contactar al hotel".</p>
+      <div id="mi-cuenta-contenido" class="cuenta"></div>
+      <p id="error-mi-cuenta" class="aviso error" role="alert" hidden></p>
+      <div class="acciones">
+        <button class="boton claro" type="button" data-cerrar>Cerrar</button>
       </div>
     </div>
   </dialog>

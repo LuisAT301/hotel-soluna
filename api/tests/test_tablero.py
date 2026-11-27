@@ -92,7 +92,8 @@ def test_el_tablero_sigue_el_dia_de_recepcion(cliente_http, admin_db, recepcion)
     datos, h = ver_tablero(cliente_http, recepcion)
     assert h["101"]["situacion"] == "ocupada" and datos["resumen"]["ocupadas"] == 1
 
-    assert cliente_http.post("/api/gestion/reservas/SOL-CICLO1/check-out", headers=recepcion).status_code == 200
+    assert cliente_http.post("/api/gestion/reservas/SOL-CICLO1/check-out", headers=recepcion,
+                             json={"metodo_pago": "efectivo"}).status_code == 200
     datos, h = ver_tablero(cliente_http, recepcion)
     assert h["101"]["situacion"] == "libre" and h["101"]["estado_limpieza"] == "sucia"
     assert datos["resumen"]["por_limpiar"] == 1 and datos["resumen"]["ocupacion"] == "0.0"
