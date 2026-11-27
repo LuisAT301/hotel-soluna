@@ -682,6 +682,10 @@ input.precio-corto { min-width: 0; width: 7em; padding: 5px 8px; }
   .nueva-reserva .fila.compacta label { flex: 1 1 100%; }
   #sec-tablero .encabezado { flex-wrap: wrap; }
   #sec-solicitudes .encabezado { flex-wrap: wrap; }
+  /* Recepción tiene tres botones: pasan debajo del título y ocupan el ancho */
+  #sec-recepcion .encabezado { flex-wrap: wrap; }
+  #sec-recepcion .encabezado .botones-fila { width: 100%; }
+  #sec-recepcion .encabezado .botones-fila .boton { flex: 1 1 auto; }
   .mensajes li { max-width: 92%; }
   #sec-tablero .encabezado .botones-fila { width: 100%; justify-content: space-between; }
   .indicadores { grid-template-columns: repeat(2, 1fr); }

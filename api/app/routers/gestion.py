@@ -4,6 +4,7 @@ Son las etapas 1 y 2 del panel del personal. Todas las rutas son para
 recepción y gerencia:
 
   GET   /api/gestion/tablero                         situación de cada habitación hoy (etapa 2).
+  POST  /api/gestion/liberar-no-presentados         libera ya las reservas sin ingreso pasada la garantía.
   GET   /api/gestion/reservas                        busca por código, huésped, correo o habitación.
   GET   /api/gestion/reservas/{codigo}               detalle con habitación, acciones posibles e historial.
   GET   /api/gestion/reservas/{codigo}/alternativas  habitaciones a las que se puede mover, con su precio.
@@ -37,7 +38,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from psycopg import errors as pg_errores
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -45,7 +46,8 @@ from .. import config, correo, facturacion
 from ..db import obtener_sesion
 from ..dependencias import registrar, requiere_rol
 from ..esquemas import (Alternativa, CambioReserva, DetalleReserva, EventoReserva, HabitacionEnTablero,
-                        ReservaEnTablero, ReservaSalida, ResumenTablero, SalidaHuesped, Tablero, VistaRecepcion)
+                        ReservaEnTablero, ReservaLiberada, ReservaSalida, ResumenTablero, SalidaHuesped, Tablero,
+                        VistaRecepcion)
 from ..facturacion import impuesto_de
 from ..modelos import Habitacion, Pago, PagoCaja, RegistroBitacora, Reserva, Solicitud, Usuario
 from .cuentas import CERO, cuenta_de, lineas_cuenta_final, texto_cuenta
@@ -276,7 +278,8 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
     habitaciones = sesion.scalars(select(Habitacion).order_by(Habitacion.piso, Habitacion.numero)).all()
     filas = sesion.execute(
         select(Reserva.habitacion_id, Reserva.codigo, Reserva.nombre_huesped, Reserva.personas,
-               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado, Reserva.canal)
+               Reserva.fecha_entrada, Reserva.fecha_salida, Reserva.estado, Reserva.canal,
+               Reserva.creada_en, Reserva.con_adelanto)
         .where(or_(Reserva.estado == "en_curso",
                    and_(Reserva.estado.in_(("pendiente_pago", "confirmada")),
                         Reserva.fecha_entrada <= dia, Reserva.fecha_salida > dia)))
@@ -285,7 +288,7 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
     ocupantes: dict[int, ReservaEnTablero] = {}
     llegadas: dict[int, ReservaEnTablero] = {}
     for fila in filas:
-        limite = garantia_hasta(fila.canal, fila.estado, fila.fecha_entrada)
+        limite = garantia_hasta(fila.canal, fila.estado, fila.fecha_entrada, fila.creada_en, fila.con_adelanto)
         reserva = ReservaEnTablero(codigo=fila.codigo, nombre_huesped=fila.nombre_huesped, personas=fila.personas,
                                    fecha_entrada=fila.fecha_entrada, fecha_salida=fila.fecha_salida,
                                    estado=fila.estado, garantia_vencida=limite is not None and ahora >= limite)
@@ -314,6 +317,28 @@ def tablero(sesion: Session = Depends(obtener_sesion), _: Usuario = Depends(RECE
         fuera_de_servicio=fuera,
     )
     return Tablero(fecha=dia, resumen=resumen, habitaciones=resultado)
+
+
+@router.post("/liberar-no-presentados", response_model=list[ReservaLiberada])
+def liberar_no_presentados(sesion: Session = Depends(obtener_sesion), usuario: Usuario = Depends(RECEPCION)):
+    """Libera ahora las reservas no presentadas, lo mismo que pg_cron hace cada hora en Supabase.
+
+    La regla vive en la función liberar_no_presentados() de la base, para
+    que la tarea programada y este botón hagan exactamente lo mismo: cancela
+    las reservas que se pagan al llegar, confirmadas, sin adelanto pagado y
+    tomadas antes de la hora de garantía del día de entrada, cuando esa hora
+    ya pasó. Cada una queda en
+    la bitácora como acción del sistema; aquí se registra además quién pidió
+    la liberación.
+    """
+    filas = sesion.execute(text("SELECT * FROM liberar_no_presentados(:hora)"),
+                           {"hora": config.HORA_GARANTIA}).all()
+    if filas:
+        registrar(sesion, usuario, "liberar_no_presentados", "sistema", None,
+                  reservas=[f.codigo_reserva for f in filas])
+    sesion.commit()
+    return [ReservaLiberada(codigo=f.codigo_reserva, habitacion=f.numero_habitacion, fecha_entrada=f.entrada)
+            for f in filas]
 
 
 # ---------------------------------------------------------------------

@@ -12,9 +12,9 @@ ejemplo ``reserva.habitacion.tipo.nombre``, sin escribir el JOIN a mano.
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Computed, ForeignKey, func
+from sqlalchemy import Computed, ForeignKey, exists, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -290,3 +290,9 @@ class PagoCaja(Base):
     referencia: Mapped[str | None]
     recibido_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
     creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+# Si la reserva recibió algún pago en caja. Un adelanto la mantiene aunque pase la hora de garantía,
+# así que no se libera sola. Se declara aquí porque necesita la tabla de pagos; viaja como un EXISTS
+# dentro de la misma consulta de la reserva, sin consultas adicionales.
+Reserva.con_adelanto = column_property(exists().where(PagoCaja.reserva_id == Reserva.id))

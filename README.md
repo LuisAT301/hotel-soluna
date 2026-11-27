@@ -302,15 +302,36 @@ El huésped recibe un correo con el código, la habitación, las fechas, el tel�
 monto a pagar en la recepción (hospedaje, IVA del 13 % y total) y la política de garantía:
 
 > Le guardamos la habitación y la tarifa acordada hasta las 5:00 p. m. del día de llegada. Si no se presenta
-> antes de esa hora, no podremos conservar el precio acordado y su estadía dependerá de las habitaciones
-> disponibles en ese momento.
+> antes de esa hora, la reserva se liberará automáticamente: no podremos conservar el precio acordado y su
+> estadía dependerá de las habitaciones disponibles en ese momento. Si ya pagó un adelanto, la reserva se
+> mantiene.
 
 La garantía aplica a las reservas que se pagan al llegar (por teléfono o en el mostrador) mientras el huésped no
-ha ingresado; las reservas en línea ya están pagadas. Pasada la hora, recepción y el tablero lo marcan como
-**Garantía vencida**, y recepción decide si cancelar la reserva o recalcular el precio. La hora se configura con
-la variable `HORA_GARANTIA` (17 por omisión) y el teléfono del hotel que aparece en el correo, con
-`TELEFONO_HOTEL`. Si se modifican las fechas o la habitación, el correo de cambio repite el monto y la nueva
-garantía.
+ha ingresado; las reservas en línea ya están pagadas y las de la agencia las garantiza la agencia. No aplica si
+el huésped pagó un adelanto en la recepción, ni si la reserva se tomó después de la hora de garantía de su mismo
+día de llegada (por ejemplo, una llamada a las 7 p. m. para llegar esa noche): en ese caso el correo explica que
+la habitación queda a su nombre para esa noche y no se libera sola. La hora se configura con la variable
+`HORA_GARANTIA` (17 por omisión) y el teléfono del hotel que aparece en el correo, con `TELEFONO_HOTEL`. Si se
+modifican las fechas o la habitación, el correo de cambio repite el monto y la nueva garantía.
+
+#### Liberación automática de las reservas no presentadas
+
+Cuando vence la garantía, la reserva se cancela sola y la habitación vuelve a estar disponible. La regla vive en
+una función de la base, `liberar_no_presentados()`, que cancela las reservas confirmadas que se pagan al llegar,
+sin adelanto, tomadas antes de la hora de garantía y cuya hora de garantía ya pasó. La ejecutan dos caminos que
+hacen exactamente lo mismo:
+
+- **`pg_cron`, cada hora en el minuto 5** (tarea `soluna-liberar-no-presentados`). La corrida de las 5:05 p. m.
+  libera las llegadas del día pocos minutos después del plazo.
+- **El botón Liberar no presentados** de Recepción, para no esperar a la siguiente corrida. Pide confirmación
+  y avisa qué reservas liberó (o que no había ninguna).
+
+Entre el vencimiento y la liberación, el tablero y la lista de recepción muestran **Garantía vencida**. Cada
+reserva liberada queda en su historial como *Liberada: no se presentó antes de la hora de garantía*, hecha por
+el sistema; si la liberación la pidió una persona con el botón, la bitácora también registra quién. La función
+es idempotente: una reserva liberada queda cancelada y no vuelve a cumplir las condiciones. No envía correo,
+porque la confirmación ya anunció la política. En Docker no hay `pg_cron`; ahí se usa el botón o
+`docker compose exec db psql -U postgres -d hotel -c "SELECT * FROM liberar_no_presentados()"`.
 
 ### Cuenta de la habitación: consumos y factura final
 
@@ -604,12 +625,14 @@ simulador. La función `hotel.mantenimiento()` los recorta con esta política:
 | Llaves de idempotencia y tokens vencidos del simulador | Más de 7 días | Más de 7 días |
 | Solicitudes de huéspedes resueltas, con sus mensajes | Más de 90 días | Más de 30 días |
 
-`pg_cron` la ejecuta en Supabase con dos tareas:
+`pg_cron` la ejecuta en Supabase con dos tareas. La tabla incluye una tercera tarea programada, que no limpia
+la base sino que libera las reservas no presentadas (ver *Liberación automática de las reservas no presentadas*).
 
 | Tarea | Cuándo | Qué hace |
 |---|---|---|
 | `soluna-vigilar-ocupacion` | Cada hora (minuto 47) | Mide la base; si la ocupación es alta, limpia de inmediato |
 | `soluna-limpieza-diaria` | Todos los días a las 03:17 de Costa Rica | Aplica la retención normal y deja constancia en la bitácora |
+| `soluna-liberar-no-presentados` | Cada hora (minuto 5) | Cancela las reservas que se pagan al llegar cuya garantía venció |
 
 Los 365 días siguen el mínimo de 12 meses de conservación de la bitácora de PCI DSS 4.0 (requisito 10.5.1), y
 los 90 días, los 3 meses que esa norma pide mantener disponibles de inmediato. La ocupación alta es una medida
@@ -875,6 +898,7 @@ los clientes simulados inician sesión una sola vez y la prueba no pide tokens d
 | GET | `/api/resenas` | Público: promedio, total y las reseñas más recientes |
 | POST | `/api/resenas` | Cuenta activa con una reservación propia ya cumplida (una reseña por reservación) |
 | GET | `/api/gestion/tablero` | Recepcionista, gerente: situación de cada habitación hoy e indicadores del día |
+| POST | `/api/gestion/liberar-no-presentados` | Recepcionista, gerente: libera ya las reservas con la garantía vencida (lo mismo que `pg_cron` cada hora) |
 | GET | `/api/gestion/reservas` | Recepcionista, gerente: búsqueda y vistas de recepción (`vista`, `q`) |
 | GET | `/api/gestion/reservas/{codigo}` | Recepcionista, gerente: detalle con acciones posibles e historial |
 | GET | `/api/gestion/reservas/{codigo}/alternativas` | Recepcionista, gerente: habitaciones a las que se puede mover, con su total |
@@ -952,7 +976,7 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 
 ## Pruebas
 
-`api/tests` contiene 179 pruebas automáticas. Cubren:
+`api/tests` contiene 190 pruebas automáticas. Cubren:
 
 - Contraseñas con Argon2id.
 - Bloqueo de cuentas y token alterado.
@@ -991,6 +1015,10 @@ Además, Nginx publica `https://localhost/pasarela/tokens`, la única ruta del s
 - Reservas por teléfono: teléfono obligatorio y su formato (en la API y en la base), canal de mostrador, el
   cliente no elige canal, correo con monto, IVA, teléfono y política de garantía, garantía solo para pago al
   llegar, garantía vencida en el tablero y correo de cambio con el monto nuevo.
+- Liberación de no presentados: cancela la llegada vencida sin adelanto y deja constancia del sistema y de quién
+  pulsó el botón; no toca reservas en línea, de la agencia, ya hospedadas, con adelanto, de mañana ni tomadas
+  después de la hora de garantía; es idempotente; respeta `HORA_GARANTIA`; la función responde sin la API (como
+  la llama `pg_cron`); tablero, detalle y correo anuncian lo mismo que hace la función; permisos por rol.
 - Mantenimiento de la base: retención de un año, recorte a 90 días con ocupación alta, vigilancia sin efectos
   con ocupación normal, limpieza de idempotencia, función vedada a la API y límites de tiempo por consulta.
 

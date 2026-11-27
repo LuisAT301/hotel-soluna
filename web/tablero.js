@@ -138,7 +138,7 @@ function tarjetaHabitacion(h, hoy) {
       l.estado === 'pendiente_pago' ? el('span', { clase: 'estado pendiente_pago' }, 'Sin pagar') : null));
   }
   if (h.llegada && h.llegada.garantia_vencida) {
-    partes.push(el('span', { clase: 'alerta' }, 'Garantía vencida: el precio ya no se conserva'));
+    partes.push(el('span', { clase: 'alerta' }, 'Garantía vencida: se libera en la próxima revisión'));
   }
   if (h.situacion === 'fuera_de_servicio' && h.llegada) {
     partes.push(el('span', { clase: 'alerta' }, 'Asigne otra habitación'));

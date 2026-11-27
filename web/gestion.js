@@ -28,6 +28,7 @@ const ACCIONES_BITACORA = {
   cargar_consumo: 'Consumo cargado a la habitación',
   anular_cargo: 'Cargo anulado',
   pago_caja: 'Pago recibido en recepción',
+  liberar_no_presentado: 'Liberada: no se presentó antes de la hora de garantía',
 };
 const METODOS_BITACORA = { efectivo: 'efectivo', tarjeta: 'tarjeta', sinpe: 'SINPE Móvil', transferencia: 'transferencia' };
 
@@ -45,7 +46,7 @@ let vistaRecepcion = 'llegadas';
 let gestionActual = null;
 
 const hoyISO = () => fechaISO(new Date());
-const horaGarantia = () => `${HORA_GARANTIA % 12 || 12}:00 ${HORA_GARANTIA < 12 ? 'a. m.' : 'p. m.'}`;
+const horaGarantia = (h = HORA_GARANTIA) => `${h % 12 || 12}:00 ${h < 12 ? 'a. m.' : 'p. m.'}`;
 
 /** Etiqueta de la garantía de una reserva que se paga al llegar: vencida, o hasta qué hora de hoy. */
 function etiquetaGarantia(r) {
@@ -204,6 +205,9 @@ function resumenEvento(e) {
       .map((campo) => `${nombres[campo]}: ${formato(campo, d.antes[campo])} → ${formato(campo, d.despues[campo])}`)
       .join('; ');
   }
+  if (e.accion === 'liberar_no_presentado') {
+    return `la garantía vencía a las ${horaGarantia(d.hora_garantia)} del ${fechaCorta(d.fecha_entrada)}; la habitación quedó libre`;
+  }
   if (e.accion === 'cargar_consumo') return `${d.cantidad} × ${d.descripcion}: ${dinero.format(Number(d.total))} sin IVA`;
   if (e.accion === 'anular_cargo') return `${d.descripcion} (${dinero.format(Number(d.total))}); motivo: ${d.motivo}`;
   if (e.accion === 'pago_caja') return `${dinero.format(Number(d.monto))} con ${METODOS_BITACORA[d.metodo] || d.metodo}`;
@@ -231,7 +235,7 @@ function mostrarHistorial() {
     return el('li', {},
       el('time', { datetime: e.fecha }, new Date(e.fecha).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })),
       el('strong', {}, ACCIONES_BITACORA[e.accion] || e.accion),
-      el('span', { clase: 'quien' }, e.usuario || 'Sistema externo'),
+      el('span', { clase: 'quien' }, e.usuario || (e.accion === 'reserva_ota' ? 'Agencia en línea' : 'Sistema (automático)')),
       resumen ? el('span', { clase: 'detalle' }, resumen) : null);
   }));
 }
@@ -456,9 +460,11 @@ function mostrarResumenNueva() {
     el('p', {}, 'Total a pagar al llegar: ', el('strong', {}, dinero.format(opcion.total + impuesto)),
       el('small', {}, ` (${dinero.format(opcion.total)} + IVA ${dinero.format(impuesto)})`)),
     el('p', { clase: tarde ? 'alerta' : '' }, tarde
-      ? `La llegada es hoy y ya pasaron las ${horaGarantia()}: la garantía de tarifa no aplica.`
+      ? `La llegada es hoy y ya pasaron las ${horaGarantia()}: la habitación queda reservada para esta noche `
+        + 'y no se libera sola. Si el huésped avisa que no llega, cancélela.'
       : `La habitación y la tarifa se garantizan hasta las ${horaGarantia()} del ${fechaCorta(entrada)}. `
-        + 'Si el huésped no llega antes, el precio no se conserva. El correo de confirmación lo explica.'));
+        + 'Si no llega antes ni paga un adelanto, la reserva se libera sola y el precio no se conserva. '
+        + 'El correo de confirmación lo explica.'));
 }
 
 /** Crea la reserva, avisa a quién se envió la confirmación y la abre en el diálogo de gestión. */
@@ -483,10 +489,25 @@ async function crearNuevaReserva(formulario) {
   await Promise.all([refrescarPanel(), abrirGestion(reserva.codigo)]);
 }
 
+/**
+ * Libera ya las reservas no presentadas (lo mismo que la tarea automática de cada hora) y avisa
+ * cuáles quedaron libres.
+ */
+async function liberarNoPresentados() {
+  if (!window.confirm(`¿Liberar las reservas que se pagan al llegar, sin ingreso ni adelanto, cuya garantía `
+    + `(${horaGarantia()} del día de llegada) ya venció? El sistema lo hace solo cada hora.`)) return;
+  const liberadas = await api('/api/gestion/liberar-no-presentados', { metodo: 'POST' });
+  avisar(liberadas.length
+    ? `Liberadas ${liberadas.length}: ${liberadas.map((r) => `${r.codigo} (habitación ${r.habitacion})`).join(', ')}.`
+    : 'No había reservas con la garantía vencida para liberar.');
+  await refrescarPanel();
+}
+
 // ---------------------------------------------------------------------
 // Eventos
 // ---------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
+  $('#btn-liberar').addEventListener('click', () => intentar(liberarNoPresentados));
   // Nueva reserva
   $('#btn-nueva-reserva').addEventListener('click', () => abrirNuevaReserva());
   const nueva = $('#form-nueva-reserva');

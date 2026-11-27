@@ -624,3 +624,10 @@ class CuentaSalida(BaseModel):
     cargos: list[CargoSalida]
     pagos: list[PagoCajaSalida]
     factura_final: FacturaFinalSalida | None
+
+
+class ReservaLiberada(BaseModel):
+    """Reserva cancelada porque el huésped no se presentó antes de la hora de garantía."""
+    codigo: str
+    habitacion: str
+    fecha_entrada: date

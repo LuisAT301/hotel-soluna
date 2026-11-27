@@ -208,6 +208,13 @@ día y, además, cada hora mide la base: si llega al 70 % del límite, recorta l
 meses que la misma norma exige mantener disponibles de inmediato. Cada limpieza diaria deja constancia en la
 bitácora con el tamaño medido. Al activarla, la base ocupaba 12 MB.
 
+`pg_cron` también ejecuta una regla de negocio: cada hora, en el minuto 5, la función
+`hotel.liberar_no_presentados()` cancela las reservas que se pagan al llegar cuya garantía (las 5:00 p. m. del
+día de entrada) venció sin que el huésped se presentara ni pagara un adelanto. La regla vive en la base y no en
+la API porque las funciones de Vercel solo se ejecutan cuando llega una petición: sin la tarea programada, una
+habitación quedaría bloqueada hasta que alguien abriera el panel. El botón de recepción llama a la misma
+función, de modo que el proceso automático y el manual no pueden divergir.
+
 La carga de consultas se acota de otra forma: la API y el simulador tienen un límite de 15 s por consulta y de
 60 s para una transacción inactiva, en lugar de los minutos que permite PostgreSQL por omisión. Así, una
 consulta defectuosa no puede acaparar la capacidad compartida del plan gratuito.
@@ -228,7 +235,7 @@ factura aceptada, pago repetido, cancelación con reembolso, protección del pan
 servicios, el registro en Hacienda y el aviso firmado de la OTA. Cancela al final las reservas que crea.
 
 En su ejecución del 18 de noviembre de 2026 aprobó las 19 comprobaciones, con una mediana de 227 ms y un
-máximo de 605 ms por paso. Las 179 pruebas automáticas de `api/tests` cubren, además, los casos que no
+máximo de 605 ms por paso. Las 190 pruebas automáticas de `api/tests` cubren, además, los casos que no
 conviene provocar en producción, como la caída de la pasarela o avisos alterados.
 
 ### 9.1. Prueba de carga

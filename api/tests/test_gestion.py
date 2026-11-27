@@ -30,11 +30,12 @@ def reserva_bd(admin_db, codigo, entrada, salida, estado="confirmada", habitacio
     if total is None:
         tipo = admin_db.execute("SELECT tipo_id FROM habitaciones WHERE id = %s", (habitacion_id,)).fetchone()[0]
         total = precio(tipo, entrada, salida)
+    # Como en la realidad, la reserva se tomó antes del día de llegada (a más tardar el día anterior)
     admin_db.execute(
         "INSERT INTO reservas (codigo, habitacion_id, nombre_huesped, correo_huesped, personas, "
-        "fecha_entrada, fecha_salida, canal, estado, total) VALUES (%s, %s, %s, %s, 2, %s, %s, "
-        "'recepcion', %s, %s)",
-        (codigo, habitacion_id, nombre, correo, entrada, salida, estado, total))
+        "fecha_entrada, fecha_salida, canal, estado, total, creada_en) VALUES (%s, %s, %s, %s, 2, %s, %s, "
+        "'recepcion', %s, %s, LEAST(now(), %s::date - interval '12 hours'))",
+        (codigo, habitacion_id, nombre, correo, entrada, salida, estado, total, entrada))
     return codigo
 
 

@@ -15,8 +15,9 @@ Reservas que se pagan al llegar (canal "recepcion", en el mostrador, o
 "telefono", por llamada): el huésped recibe un correo con el código, la
 habitación, el monto con IVA a pagar a su llegada y la garantía: la
 habitación y la tarifa se conservan hasta las 17:00 del día de entrada.
-Después, si no se presentó, el precio no se garantiza y la estadía depende
-de la disponibilidad. En las reservas por teléfono, el teléfono de
+Después, si no se presentó y no pagó un adelanto, la reserva se libera sola
+(función liberar_no_presentados() de la base, que pg_cron ejecuta cada
+hora) y la estadía depende de la disponibilidad. En las reservas por teléfono, el teléfono de
 contacto es obligatorio.
 
 Regla contra la sobreventa: la base de datos (restricción "sin_traslape")
@@ -100,17 +101,30 @@ def nuevo_codigo() -> str:
     return "SOL-" + "".join(secrets.choice(alfabeto) for _ in range(6))
 
 
-def garantia_hasta(canal: str, estado: str, fecha_entrada: date) -> datetime | None:
+def garantia_hasta(canal: str, estado: str, fecha_entrada: date, creada_en: datetime | None = None,
+                   con_adelanto: bool = False) -> datetime | None:
     """Hasta cuándo se garantizan la habitación y la tarifa de una reserva que se paga al llegar.
 
     Solo aplica mientras el huésped no ha ingresado (reserva confirmada) y
     a los canales de recepción y teléfono: las reservas en línea ya están
-    pagadas y las de la agencia las garantiza la agencia. Devuelve None si
-    no aplica.
+    pagadas y las de la agencia las garantiza la agencia. Tampoco aplica si
+    el huésped pagó un adelanto, ni si la reserva se tomó después de la hora
+    de garantía de su día de llegada (por ejemplo, una llamada a las 7 p. m.
+    para llegar esa noche): en esos casos no hay plazo que vencer. Devuelve
+    None si no aplica. Son las mismas condiciones con que la función
+    liberar_no_presentados de la base cancela las reservas vencidas.
     """
-    if canal not in CANALES_PAGO_EN_HOTEL or estado != "confirmada":
+    if canal not in CANALES_PAGO_EN_HOTEL or estado != "confirmada" or con_adelanto:
         return None
-    return datetime.combine(fecha_entrada, time(config.HORA_GARANTIA), tzinfo=config.ZONA_HORARIA)
+    limite = datetime.combine(fecha_entrada, time(config.HORA_GARANTIA), tzinfo=config.ZONA_HORARIA)
+    if creada_en is not None and creada_en >= limite:
+        return None
+    return limite
+
+
+def garantia_de(r: Reserva) -> datetime | None:
+    """Garantía de una reserva ya cargada (ver garantia_hasta)."""
+    return garantia_hasta(r.canal, r.estado, r.fecha_entrada, r.creada_en, r.con_adelanto)
 
 
 def hora_legible(hora: int) -> str:
@@ -122,17 +136,27 @@ def bloque_pago_en_hotel(reserva: Reserva) -> str:
     """Párrafos del correo con el monto a pagar al llegar y la política de garantía."""
     impuesto = impuesto_de(reserva.total)
     noches = (reserva.fecha_salida - reserva.fecha_entrada).days
+    hora = hora_legible(config.HORA_GARANTIA)
+    if garantia_de(reserva) is not None:
+        garantia = (
+            f"Le guardamos la habitación y la tarifa acordada hasta las {hora} del "
+            f"{reserva.fecha_entrada:%d/%m/%Y}, su día de llegada. Si no se presenta antes de esa hora, la "
+            f"reserva se liberará automáticamente: no podremos conservar el precio acordado y su estadía "
+            f"dependerá de las habitaciones disponibles en ese momento. Si ya pagó un adelanto, la reserva "
+            f"se mantiene.")
+    else:
+        # Reserva tomada después de la hora de garantía del mismo día de llegada
+        garantia = (
+            f"Como la reserva se registró después de las {hora} de su día de llegada, la habitación queda a "
+            f"su nombre para esta noche y no se libera automáticamente. Si no podrá llegar, avísenos para "
+            f"ofrecerla a otro huésped.")
     return (
         f"Monto a pagar a su llegada\n"
         f"  Hospedaje ({noches} {'noche' if noches == 1 else 'noches'}): USD {reserva.total}\n"
         f"  IVA (13 %): USD {impuesto}\n"
         f"  Total: USD {reserva.total + impuesto}\n"
         f"El pago se realiza en la recepción del hotel al registrar su ingreso.\n\n"
-        f"Garantía de su reserva\n"
-        f"Le guardamos la habitación y la tarifa acordada hasta las {hora_legible(config.HORA_GARANTIA)} "
-        f"del {reserva.fecha_entrada:%d/%m/%Y}, su día de llegada. Si no se presenta antes de esa hora, no "
-        f"podremos conservar el precio acordado y su estadía dependerá de las habitaciones disponibles en ese "
-        f"momento.\n\n"
+        f"Garantía de su reserva\n{garantia}\n\n"
         f"Si necesita cambiar o cancelar su reserva, llámenos al {config.TELEFONO_HOTEL} o responda este "
         f"correo indicando su código.\n"
     )
@@ -167,7 +191,7 @@ def salida_reserva(r: Reserva) -> ReservaSalida:
         total_con_impuesto=r.total + impuesto_de(r.total),
         tiene_factura=r.factura is not None,
         creada_en=r.creada_en,
-        garantia_hasta=garantia_hasta(r.canal, r.estado, r.fecha_entrada),
+        garantia_hasta=garantia_de(r),
     )
 
 
